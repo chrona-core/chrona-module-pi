@@ -1,0 +1,243 @@
+{
+  "schema": 1,
+  "source": [
+    "application.bun.test.ts",
+    "application.ts",
+    "browser.ts",
+    "build.ts",
+    "bun.lock",
+    "completions.bun.test.ts",
+    "completions.ts",
+    "configuration.bun.test.ts",
+    "configuration.ts",
+    "host-recovery.ts",
+    "index.ts",
+    "journal.ts",
+    "LICENSE",
+    "module.json",
+    "operations.bun.test.ts",
+    "operations.ts",
+    "package.json",
+    "README.md",
+    "registration.ts",
+    "runtime.bun.test.ts",
+    "runtime.fixture.ts",
+    "runtime.ts",
+    "schema.ts",
+    "settings-page.ts",
+    "test-entry.ts",
+    "test.ts",
+    "transcript-sdk.bun.test.ts",
+    "transcript-sdk.fixture.ts"
+  ],
+  "artifacts": [
+    {
+      "path": "runtime.js",
+      "sha256": "da17b4957a830589be21004445ac0c31243b7bdd80b084152216b546329028c5"
+    },
+    {
+      "path": "test.js",
+      "sha256": "8c38b90bc00bae47abfb793a6cb6cec3c2f3aa96dae3142e226f887a72debabb"
+    },
+    {
+      "path": "vendor/@chrona/contracts/package.json",
+      "sha256": "e1260ceb2ec63ada15f0cfe242ce6eb3b129e99a8497e4561f12d6fb72b6963a"
+    },
+    {
+      "path": "vendor/@chrona/contracts/runtime/chunk-b285cbafc37a3c231665e59ec25c212560cd741d9d2faf3058f964d81449e30d.js",
+      "sha256": "3b9d8f2bf189ec32b6ef86b47b98b6c7c008c3d8af00a6d9bc6579e38ffb3e86"
+    },
+    {
+      "path": "vendor/@chrona/contracts/runtime/index.js",
+      "sha256": "2169d64d374b3c9a4ab4f459b465b39fa5b97a168ae9ae5cc3c4d47751c08066"
+    },
+    {
+      "path": "vendor/@chrona/contracts/runtime/steward/index.js",
+      "sha256": "996c6d7083cdce832cf337b46a05808d53acad94b10e6e01394273535eb83336"
+    },
+    {
+      "path": "vendor/@chrona/contracts/THIRD-PARTY-NOTICES.txt",
+      "sha256": "c1619cddaee4b3d8f8640b8b11cc2c2b04b4e97ab5dd799d3be9cb074a4aa5cc"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/index.ts",
+      "sha256": "70a85a68ae1854096ef82bb468ca6ce1149771ab27a81dd7040294411d527a0a"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/agent-provider.ts",
+      "sha256": "ae7fd0c3c9b9b0bd273a05ee70614469a8ed0f18ccb11f604e1ffe338ee75f0b"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/agent.ts",
+      "sha256": "8241508eb529aa602a886edc0f71a18e3f834777a5e65a78e7b8cf5fe372d31f"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/execution-events.ts",
+      "sha256": "3316ca2f4ff17de465b559631eb6d87ba7658c241641eb2306720a55cdd7b4bd"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/execution-tools.ts",
+      "sha256": "7e1349e70229bba652b7aa17eb4771005527c5f927950bdc992f5704eeb04d4e"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/execution-v2.ts",
+      "sha256": "987aaf946330f10359150d761250d6c6532ec50eca4bcdc73fa0981612cf2a57"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/execution.ts",
+      "sha256": "f9a79037d91846ee1ef7b31b74e327d6c338c9f14e7b62377cef35d49d80e4c6"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/index.ts",
+      "sha256": "7a132db15e702c3847b634de78b6f3a799011b96b0360d80b0ba09a89a3b093c"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/kernel-api.ts",
+      "sha256": "fccc23ef437bcf6ed3e737442f68e0ccb050c07a5e8ab0fb6f00ca82813670fb"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/kernel-execution.ts",
+      "sha256": "91cb0de5647dc084c236cdaeb5666141a7a81a2460a8d0c14a276eb82de423bb"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/local-runtime.ts",
+      "sha256": "d67263423deab5c70ef75c4c1ec57736e75af06d1497617589bfedf116cb4daa"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/module-candidates.ts",
+      "sha256": "718e52759c5991c1b0c55edcde6cd50c9e15f9dca3f21d5592369df5911624bd"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/module-entry.ts",
+      "sha256": "cbe4c99a16c6de1860899e0e23239482918cc517a16defd12ef64a60e0096ba0"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/module-input.ts",
+      "sha256": "31b3448617581c0c04be767fd4a5da8fe4d9b44e3132ed73c4b1cde1405f55ad"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/module-lifecycle.ts",
+      "sha256": "9daee0527366db2cdd3a4c6b3b735cf9425c0fa90441111e6240589b86eb547b"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/module-output.ts",
+      "sha256": "ce7be562f49173e36386a178f75d709255f7cfb2b7a3f7530d2bcf1f6750c7a9"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/module-tool.ts",
+      "sha256": "d85f7ec83f221ae0776d1840f188e46d2b0679ace870b19baf89095673937b37"
+    },
+    {
+      "path": "vendor/@chrona/contracts/types/src/steward/provider.ts",
+      "sha256": "f10510cc042dfdf997c70ea09746eb0a607222dfed024843f0d99ff6d44e7e97"
+    },
+    {
+      "path": "vendor/@chrona/logging/package.json",
+      "sha256": "1e63a05c61ec96e5fbfb9586f5e5da2448559fa4c3123c052d022512994b0cdf"
+    },
+    {
+      "path": "vendor/@chrona/logging/runtime/chunk-17fb7c596bb956ae158c902c81ccf50f5a797eb993c3146b97dc4b610c226afd.js",
+      "sha256": "39927d65458f14cce67785ac0cb36ed542f2c62d8c9cd5debdbb1c3495aac52e"
+    },
+    {
+      "path": "vendor/@chrona/logging/runtime/index.js",
+      "sha256": "68d90966b9075668ee20e46869de45d113e789fd88ccf85fdfee2436057e4805"
+    },
+    {
+      "path": "vendor/@chrona/logging/runtime/redaction.js",
+      "sha256": "56d24e25f2c151460a24838de58386348e005beb6ee9d7be71c1b50f61f28ff9"
+    },
+    {
+      "path": "vendor/@chrona/logging/THIRD-PARTY-NOTICES.txt",
+      "sha256": "6130882ed5b52b1484f6acda99f76609db91a89b8f55c4cbf1be31ecc83d3fa7"
+    },
+    {
+      "path": "vendor/@chrona/logging/types/src/index.d.ts",
+      "sha256": "74aa945ceb0907e264a1fbde28d462aece3468e39909de43b69f06a8a4d22e74"
+    },
+    {
+      "path": "vendor/@chrona/logging/types/src/redaction.d.ts",
+      "sha256": "40374588eb6c8a828b9e6086ae7d982d97a4d6c230081df115e1e8f300869ba1"
+    },
+    {
+      "path": "vendor/@chrona/pi/package.json",
+      "sha256": "35a486be99ffb0c26d1ceaee1ee8a6d64485f8b480192b5d719d384b7e9b0db5"
+    },
+    {
+      "path": "vendor/@chrona/pi/runtime/index.js",
+      "sha256": "0750dd45d229dcf59157f80cc13a1851d60f4a74ec7cd60edcb43d4da8cdf36e"
+    },
+    {
+      "path": "vendor/@chrona/pi/THIRD-PARTY-NOTICES.txt",
+      "sha256": "67ade9d68b25899e84c454c08455ce77391d2eaa0396ccb28c38726820f5759f"
+    },
+    {
+      "path": "vendor/@chrona/pi/types/src/index.d.ts",
+      "sha256": "d7c58bd02804b3be8064c63fee488d75f9c123b888c1a27fed5e3bffa7c23324"
+    },
+    {
+      "path": "vendor/@chrona/pi/types/src/pi-completion.d.ts",
+      "sha256": "eaed37e740a4f00cec02c56cb9de0c24cb04323788ab7a3f5d4c6e7eebe32ddd"
+    },
+    {
+      "path": "vendor/@chrona/pi/types/src/pi-detail.d.ts",
+      "sha256": "d36f13b125631d53718d0dce1e3b57f5c1811ccf52fd2ccfacddf57ef37ee117"
+    },
+    {
+      "path": "vendor/@chrona/pi/types/src/pi-events.d.ts",
+      "sha256": "2b8dde16551e0501f75611cc5cefde9aa1c54cf24488faf9d7d9799020c2a71b"
+    },
+    {
+      "path": "vendor/@chrona/pi/types/src/pi-launch.d.ts",
+      "sha256": "983f279a61d7c53fe8691b9cf97c07dec90a3128854bfbd17b843d8e93ec84d6"
+    },
+    {
+      "path": "vendor/@chrona/pi/types/src/pi-native.d.ts",
+      "sha256": "55fe0ae34b69ecfe141154bc551a675b54a891424d60ecd56d6f23b181aed24b"
+    },
+    {
+      "path": "vendor/@chrona/pi/types/src/pi-process.d.ts",
+      "sha256": "7305522d372569a8f7799dc0b911f4722e9b1ed58964b0068f69e2dca9800827"
+    },
+    {
+      "path": "vendor/@chrona/pi/types/src/pi-provider.d.ts",
+      "sha256": "22d21289332f31ff278eb0f484249ca744e6c27ee802f16dcb2ec824f8752e53"
+    },
+    {
+      "path": "vendor/@chrona/pi/types/src/pi-resources.d.ts",
+      "sha256": "857cf3ed25c9e9b922f16527256548c766624808d7ad26ce1b68f6dd78bceb13"
+    },
+    {
+      "path": "vendor/@chrona/pi/types/src/pi-session-resume.d.ts",
+      "sha256": "c1956bfb4f0c1516c0855553691343a552726706f7361daadb8d1b0d31b1eafb"
+    },
+    {
+      "path": "vendor/@chrona/pi/types/src/pi-transcript.d.ts",
+      "sha256": "5abf290f74a41e6c3ddcbe2e64a423275f881b23c0eb198b202c3e8a45c93763"
+    },
+    {
+      "path": "vendor/zod/package.json",
+      "sha256": "1f0baa5824106a436c50110b3bb7f077d36f21c77364c10b3520ec4148a79474"
+    },
+    {
+      "path": "vendor/zod/runtime/index.js",
+      "sha256": "ff304072add6b8b627c05880bb596440fe33c06c689f501f01907aa9e4e4908b"
+    },
+    {
+      "path": "vendor/zod/THIRD-PARTY-NOTICES.txt",
+      "sha256": "b030073243b5391257833a287e320ed5a815d7666fabf07fd061fa9b850ddec6"
+    },
+    {
+      "path": "vendor/zod/types/index.d.ts",
+      "sha256": "4b0519f366cc601111068e91c71818a74b0f268c0c3de8ef012b3ecfbf082958"
+    }
+  ],
+  "build": {
+    "commands": [
+      "bun build.ts",
+      "assembleModuleDependencies"
+    ],
+    "toolchain": "bun 1.4.2",
+    "target": "bun"
+  }
+}
