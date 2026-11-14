@@ -141,7 +141,7 @@
     },
     {
       "path": "vendor/@chrona/logging/runtime/index.js",
-      "sha256": "68d90966b9075668ee20e46869de45d113e789fd88ccf85fdfee2436057e4805"
+      "sha256": "b2f6740492355555d61ec7f34962b80c1fbbdd00252ae4b10388bb6f9c6c8aad"
     },
     {
       "path": "vendor/@chrona/logging/runtime/redaction.js",
@@ -165,7 +165,7 @@
     },
     {
       "path": "vendor/@chrona/pi/runtime/index.js",
-      "sha256": "0750dd45d229dcf59157f80cc13a1851d60f4a74ec7cd60edcb43d4da8cdf36e"
+      "sha256": "63f634a207ebfb6b775e7766d2579f7e267a458be7a979f659d81daa9bb380ab"
     },
     {
       "path": "vendor/@chrona/pi/THIRD-PARTY-NOTICES.txt",
@@ -177,7 +177,7 @@
     },
     {
       "path": "vendor/@chrona/pi/types/src/pi-completion.d.ts",
-      "sha256": "eaed37e740a4f00cec02c56cb9de0c24cb04323788ab7a3f5d4c6e7eebe32ddd"
+      "sha256": "14202bff95ef29fe355384cf993c2e55f613f1e5f15133054af340850c830969"
     },
     {
       "path": "vendor/@chrona/pi/types/src/pi-detail.d.ts",
