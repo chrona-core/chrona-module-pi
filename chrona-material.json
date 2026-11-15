@@ -141,7 +141,7 @@
     },
     {
       "path": "vendor/@chrona/logging/runtime/index.js",
-      "sha256": "b2f6740492355555d61ec7f34962b80c1fbbdd00252ae4b10388bb6f9c6c8aad"
+      "sha256": "a81b4ebe5044a11f92bbac95ca162a613c75d1bee84ca85a9272c9f359afb807"
     },
     {
       "path": "vendor/@chrona/logging/runtime/redaction.js",
