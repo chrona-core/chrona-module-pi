@@ -9,9 +9,9 @@
 在仓库根目录运行：
 
 ```sh
-bun run packages/engine/src/modules/steward/external/pi/build.ts
-bun test packages/engine/src/modules/steward/external/pi
-bun run packages/engine/src/modules/steward/external/pi/test.ts
+bun run packages/engine/src/modules/steward/applications/pi/build.ts
+bun test packages/engine/src/modules/steward/applications/pi
+bun run packages/engine/src/modules/steward/applications/pi/test.ts
 ```
 
 应用目录的 `bun run build` 和 `bun run test` 同样可用；后者先构建，再运行完整假提供方测试与随发行版本附带的作者测试。构建生成 `module.json`、`runtime.js`、`test.js` 以及导入入口。构建不安装依赖。测试仅使用假适配器和临时目录，运行时检查通过 Bun 子进程模拟源码及发行产物，不启动真实 Pi、模型或账号。

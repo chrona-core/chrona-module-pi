@@ -11,6 +11,7 @@
     "completions.ts",
     "configuration.bun.test.ts",
     "configuration.ts",
+    "DEVELOPMENT.md",
     "host-recovery.ts",
     "index.ts",
     "journal.ts",

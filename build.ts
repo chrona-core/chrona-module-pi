@@ -33,10 +33,10 @@ export function manifest() {
     }),
   };
 }
-export async function buildPiApplication(outputDir = import.meta.dir) {
+export async function buildPiApplication(outputDir = import.meta.dir, sourceDir = outputDir) {
   await mkdir(outputDir, { recursive: true });
   await writeFile(join(outputDir, "module.json"), JSON.stringify(manifest(), null, 2) + "\n");
-  const result = await Bun.build({ entrypoints: [join(import.meta.dir, "runtime.ts"), join(import.meta.dir, "test.ts")], target: "bun", minify: true,
+  const result = await Bun.build({ entrypoints: [join(sourceDir, "runtime.ts"), join(sourceDir, "test.ts")], target: "bun", minify: true,
     external: ["chrona", "@chrona/contracts", "@chrona/contracts/*", "@chrona/logging", "@chrona/logging/*", "@chrona/pi", "zod"], outdir: outputDir, naming: "[name].js" });
   if (!result.success) throw new AggregateError(result.logs, "Pi module build failed");
   for (const name of ["runtime.js", "test.js"]) {
