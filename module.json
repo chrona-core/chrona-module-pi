@@ -583,7 +583,8 @@
                       "type": "string",
                       "enum": [
                         "record_too_large",
-                        "item_too_large"
+                        "item_too_large",
+                        "malformed_record"
                       ]
                     },
                     "item": {
