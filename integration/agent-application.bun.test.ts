@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { callSync, kernelOrigin, enqueueCall } from "../../Chrona/packages/kernel/src/modules/module-calls";
 import { registerLocalRuntime, runtimeCall, startLocalProvider } from "../../Chrona/packages/kernel/src/execution/local-runtime";
 import { createPiOperations } from "../operations";
-import { moduleManifestSchema, type ExecutionEvent, type ProviderRunInput } from "@chrona/contracts/steward";
+import { moduleManifestSchema, type ProviderRunInput } from "@chrona/contracts/steward";
 import { retainProviderCallbacks } from "../../Chrona/packages/kernel/src/agent/local-provider";
 import { moduleSupervisor } from "../../Chrona/packages/kernel/src/modules/module-supervisor";
 import { callProviderEndpoint } from "../../Chrona/packages/kernel/src/agent/agent-provider";
@@ -57,22 +57,16 @@ test("real external Pi SDK callbacks reach derived ports when the supervisor own
     await runtimeCall(f.ports, f.workspaceId, "pi.health", {});
     const ports: typeof f.ports = Object.create(f.ports);
     expect(moduleSupervisor(ports)).toBe(supervisor);
-    const details: ExecutionEvent[] = [], progress: unknown[] = [];
-    const execution = { workId: "callback-work", sessionId: "callback-session", runId: f.input.runId, attemptId: "callback-attempt" };
-    const handle = await startLocalProvider(ports, f.workspaceId, { ...f.input, execution,
-      detail: { async append(value) { details.push(value); } },
+    const progress: unknown[] = [];
+    const handle = await startLocalProvider(ports, f.workspaceId, { ...f.input,
       events: { async progress(value) { progress.push(value); }, async usage() {}, async resources() {}, async question() { return { decision: "cancel" }; } },
     });
-    for (let i = 0; i < 100 && (!progress.some(value => (value as { phase: string; tool: string | null }).phase === "reading" && (value as { tool: string | null }).tool === "read") || !details.some(event => event.payload.type === "tool_started")); i++) await Bun.sleep(20);
+    for (let i = 0; i < 100 && (!progress.some(value => (value as { phase: string; tool: string | null }).phase === "reading" && (value as { tool: string | null }).tool === "read")); i++) await Bun.sleep(20);
     expect(progress).toContainEqual({ phase: "reading", tool: "read" });
-    expect(details).toContainEqual(expect.objectContaining({ ...execution, payload: { type: "tool_started", toolCallId: "fixture", tool: "read", display: {} } }));
     await handle.abort();
     const outcome = await handle.done;
     expect(outcome.outcome).toBe("failed");
-    expect(outcome.error ?? "").not.toContain("detail is incomplete");
-    expect(details).toContainEqual(expect.objectContaining({ payload: { type: "state", status: "failed", cancelRequested: false, stopConfirmed: true } }));
     const callbacks = await f.ports.db.moduleInvocation.findMany({ where: { target: "runtime-callback", tool: "event" } });
-    // The state detail above proves the callbacks were delivered; they keep no ledger rows.
     expect(callbacks).toHaveLength(0);
   } finally { await f.close(); }
 }, 20000);
@@ -95,13 +89,13 @@ test("callback references share only db and dataDir scope and release only their
     const derived: typeof ports = Object.create(ports);
     const foreignDir = { ...ports, dataDir: join(root, "foreign") }, foreignPorts = { ...ports, db: foreignDb };
     let deliveries = 0;
-    const input: Pick<ProviderRunInput, "events" | "detail"> = { detail: { async append() { deliveries++; } } };
+    const input: Pick<ProviderRunInput, "events"> = { events: { async progress() { deliveries++; }, async usage() {}, async resources() {}, async question() { return { decision: "cancel" }; } } };
     const retain = (scope: typeof ports, workspaceId = workspace.id) => {
       const value = retainProviderCallbacks(scope, workspaceId, { ...input, provider: { ...provider, moduleId: workspaceId === other.id ? "other-provider" : provider.moduleId } }); registrations.push(value); return value;
     };
     const first = retain(derived), second = retain(ports), otherWorkspace = retain(ports, other.id), otherDir = retain(foreignDir), otherDb = retain(foreignPorts);
     expect(new Set(registrations.map(value => value.id)).size).toBe(registrations.length);
-    const event = { kind: "detail", value: { workId: "work", sessionId: "session", runId: "run", attemptId: "attempt", seq: 1, at: new Date().toISOString(), payload: { type: "state", status: "running", cancelRequested: false, stopConfirmed: false } } };
+    const event = { kind: "progress", value: { phase: "reading", tool: "read" } };
     const deliver = (scope: typeof ports, callbackId: string, workspaceId = workspace.id) => callSync(scope, { ...kernelOrigin(workspaceId), caller: { kind: "module", module: "callback-provider", moduleId: workspaceId === other.id ? "other-provider" : provider.moduleId, hash: provider.hash } }, "runtime-callback.event", { callbackId, event });
     await deliver(ports, first.id);
     await deliver(derived, second.id);

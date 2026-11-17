@@ -104,7 +104,7 @@ test.each([
   { resources: "configured" as const, model: "openai/pinned" },
 ])("finite retries recover within one prompt and retain completed effects: %j", async selection => {
   const f = await fixture();
-  const result = await f.provider.start({ ...f.input, ...selection, executionBudget: { maxToolCalls: 1 } }).done;
+  const result = await f.provider.start({ ...f.input, ...selection }).done;
   expect(result).toEqual({ outcome: "finished", sessionId: "retry-session", error: null });
   const launch = await f.json("launch.json"), settings = await f.json("prompt-settings.json");
   expect(launch.profile).toBe(f.agentDir);
@@ -204,15 +204,5 @@ test("retrying does not bypass the idle limit", async () => {
   await until(() => existsSync(join(f.cwd, "retry-wait")));
   expect(await handle.done).toMatchObject({ outcome: "timed_out", error: expect.stringContaining("no output") });
   expect(await f.lines("attempts.jsonl")).toHaveLength(1);
-  expect(existsSync(join(f.cwd, "closed"))).toBe(true);
-});
-
-test("tool calls before recovery still count against the Run limit", async () => {
-  const f = await fixture("tool-limit");
-  const result = await f.provider.start({ ...f.input, executionBudget: { maxToolCalls: 1 } }).done;
-  expect(result).toMatchObject({ outcome: "failed", error: "Execution tool budget exceeded" });
-  expect(await f.lines("attempts.jsonl")).toHaveLength(2);
-  expect(await f.lines("effects.jsonl")).toEqual([{ id: "effect-before-error" }, { id: "effect-after-retry" }]);
-  expect((await f.lines("commands.jsonl")).filter(c => c.type === "prompt")).toHaveLength(1);
   expect(existsSync(join(f.cwd, "closed"))).toBe(true);
 });

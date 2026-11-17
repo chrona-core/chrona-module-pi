@@ -114,12 +114,12 @@ test.each(["never_replies", "bad_correlation", "change_session"])("%s is an unkn
   expect((await f.commands()).filter(c => c.type === "prompt")).toHaveLength(1);
 });
 
-test("known session/bridge changes, pinned-model changes, invalid JSON and budget-bypassing bash are rejected before send", async () => {
-  const f = await fixture(), handle = f.provider.start({ ...f.input, model: "test/model", executionBudget: { maxToolCalls: 2 } });
-  for (const type of ["new_session", "switch_session", "set_host_tools", "set_active_tools", "set_model", "bash"]) await expect(handle.native!({ type })).rejects.toMatchObject({ code: "unsupported" });
+test("known session/bridge changes, pinned-model changes, invalid JSON are rejected before send", async () => {
+  const f = await fixture(), handle = f.provider.start({ ...f.input, model: "test/model" });
+  for (const type of ["new_session", "switch_session", "set_host_tools", "set_active_tools", "set_model"]) await expect(handle.native!({ type })).rejects.toMatchObject({ code: "unsupported" });
   for (const request of [{ type: "get_state", id: 12 }, { type: "get_state", nested: { x: Infinity } }, { type: "prompt" }]) await expect(handle.native!(request)).rejects.toMatchObject({ code: "invalid" });
   await handle.abort();
-  expect((await f.commands()).some(c => ["set_host_tools", "set_model", "bash"].includes(String(c.type)))).toBe(false);
+  expect((await f.commands()).some(c => ["set_host_tools", "set_model"].includes(String(c.type)))).toBe(false);
 });
 
 test("large native responses fail explicitly instead of slicing JSON", async () => {

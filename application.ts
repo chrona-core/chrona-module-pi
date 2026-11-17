@@ -57,7 +57,7 @@ export function createPiApplication({ data, options, createProvider, call }: App
             return providerAnswerSchema.parse(await answer);
           } finally { signal.removeEventListener("abort", abort); }
         },
-      }, detail: { async append(value) { await event(callbacks, { kind: "detail", value }); } },
+      },
     };
   }
   const prepareCompletion: PrepareCompletion = async request => {

@@ -3,7 +3,7 @@ import { moduleCallbackContractHash } from "../../Chrona/packages/kernel/src/mod
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { moduleManifestSchema, type ExecutionEvent } from "@chrona/contracts/steward";
+import { moduleManifestSchema } from "@chrona/contracts/steward";
 import { agentFixture } from "./agent-application.fixtures";
 import { startLocalProvider } from "../../Chrona/packages/kernel/src/execution/local-runtime";
 import { createServerApp } from "../../Chrona/apps/server/src/app";
@@ -14,18 +14,17 @@ async function fixture() {
   const f = await agentFixture();
   // Reuse only the Pi provider host; discard the engine fixture's unrelated placeholder rows.
   await f.ports.db.module.deleteMany({ where: { name: { in: ["web", "mcp", "files", "notify", "events"] } } });
-  const runtime = createStewardRuntime(f.ports.db, { dataDir: f.ports.dataDir, provider: null, sandbox: f.ports.sandbox });
+  const runtime = createStewardRuntime(f.ports.db, { dataDir: f.ports.dataDir, sandbox: f.ports.sandbox });
   runtime.ports.moduleExternalResources = f.ports.moduleExternalResources;
   runtime.ports.moduleSdk = f.ports.moduleSdk;
   const db = f.ports.db;
   const entry = await db.module.create({ data: { workspaceId: f.workspaceId, name: "execution-test-entry", activeHash: "v1" } });
   await db.moduleVersion.create({ data: { moduleId: entry.id, hash: "v1", source: "user", status: "approved", intent: {}, report: {},
     manifest: moduleManifestSchema.parse({ name: entry.name, entry: "index.ts", tests: ["test.ts"], effects: [], keepAlive: true, uses: ["modules.list"] }) } });
-  const session = await db.session.create({ data: { workspaceId: f.workspaceId, source: "module", moduleId: entry.id, key: "fake-pi-http" } });
-  await db.agentContext.create({ data: { sessionId: session.id, workspaceId: f.workspaceId, moduleId: entry.id, hash: "v1" } });
-  await db.run.update({ where: { id: f.input.runId }, data: { sessionId: session.id } });
+  const context = await db.agentContext.create({ data: { workspaceId: f.workspaceId, ownerId: "owner", moduleId: entry.id, hash: "v1" } });
+  await db.run.update({ where: { id: f.input.runId }, data: { sessionId: context.id } });
   const selected = await selectContextTools(runtime.ports, { workspaceId: f.workspaceId, ownerId: "owner", caller: { kind: "module", moduleId: entry.id, hash: "v1" } }, ["modules.list"]);
-  await db.agentRunAdmission.create({ data: { runId: f.input.runId, moduleId: entry.id, hash: (await db.agentContext.findUniqueOrThrow({ where: { sessionId: (await db.run.findUniqueOrThrow({ where: { id: f.input.runId } })).sessionId! } })).hash, targets: selected.entries.map(entry => ({ target: `${entry.module.name}.${entry.tool.name}`, moduleId: entry.module.id, contractHash: moduleCallbackContractHash(entry.tool) })), content: [] } });
+  await db.agentRunAdmission.create({ data: { runId: f.input.runId, moduleId: entry.id, hash: context.hash, targets: selected.entries.map(entry => ({ target: `${entry.module.name}.${entry.tool.name}`, moduleId: entry.module.id, contractHash: moduleCallbackContractHash(entry.tool) })), content: [] } });
   const app = await createServerApp({ steward: runtime });
   const headers = { authorization: `Bearer ${f.input.token}`, "content-type": "application/json" };
   const peer = { server: { requestIP: () => ({ address: "127.0.0.1" }) } };
@@ -54,27 +53,22 @@ test("generic server authenticates the real Pi capability while actual SDK/fake 
     expect(list.status).toBe(200); expect(await list.json()).toMatchObject({ ok: true });
     const privateTool = await f.request("/tools/m_pi_start", { method: "POST", headers: f.headers, body: "{}" });
     expect(privateTool.status).toBe(409); expect(await privateTool.json()).toMatchObject({ error: { code: "forbidden" } });
-    const details: ExecutionEvent[] = [], progress: unknown[] = [];
-    const execution = { workId: "generic-pi", sessionId: "generic-session", runId: f.input.runId, attemptId: "generic-attempt" };
-    handle = await startLocalProvider(f.runtime.ports, f.workspaceId, { ...f.input, execution,
-      detail: { async append(value) { details.push(value); } },
+    const progress: unknown[] = [];
+    handle = await startLocalProvider(f.runtime.ports, f.workspaceId, { ...f.input,
       events: { async progress(value) { progress.push(value); }, async usage() {}, async resources() {}, async question() { return { decision: "cancel" }; } },
     });
     expect(await waitForPid(f.input.cwd)).toBeGreaterThan(0);
-    // Detail and progress are delivered through independent callback queues.
     for (let i = 0; i < 100; i++) {
-      if (details.some(event => event.payload.type === "tool_started") && progress.some(value => {
+      if (progress.some(value => {
         const update = value as { phase: string; tool: string | null };
         return update.phase === "reading" && update.tool === "read";
       })) break;
       await Bun.sleep(20);
     }
     expect(progress).toContainEqual({ phase: "reading", tool: "read" });
-    expect(details).toContainEqual(expect.objectContaining({ ...execution, payload: { type: "tool_started", toolCallId: "fixture", tool: "read", display: {} } }));
     await handle.abort();
     const outcome = await handle.done; handle = undefined;
     expect(outcome).toMatchObject({ outcome: "failed" });
-    expect(details).toContainEqual(expect.objectContaining({ payload: { type: "state", status: "failed", cancelRequested: false, stopConfirmed: true } }));
     const callbacks = await f.db.moduleInvocation.findMany({ where: { target: "runtime-callback", tool: "event" } });
     expect(callbacks).toEqual([]);
     expect(JSON.stringify(await f.db.moduleInvocation.findMany())).not.toContain("private-agent");

@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createPiProvider } from "./pi-provider";
 import { prepareContent } from "./pi-launch";
-import { EXECUTION_EVENT_LIMITS, executionEventSchema, type ExecutionEvent, type ProviderRunInput } from "@chrona/contracts/steward";
+import type { ProviderRunInput } from "@chrona/contracts/steward";
 
 // Only fake subprocesses, never the installed model runner. Temp artifacts deliberately
 // remain in OS temp (worker task forbids deletions).
@@ -16,7 +16,7 @@ async function fixture(mode = "normal") {
 import { appendFileSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 if (process.argv.includes('--version')) {console.log('0.85.0');process.exit(0);}
-writeFileSync('launch.json', JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),profile:process.env.PI_CODING_AGENT_DIR,executionToolBudget:process.env.CHRONA_EXECUTION_MAX_TOOL_CALLS,hasChronaDatabaseSecret:'CHRONA_DATABASE_SECRET' in process.env,tokenMatches:process.env.CHRONA_AGENT_TOKEN==='private-run-token'}));
+writeFileSync('launch.json', JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),profile:process.env.PI_CODING_AGENT_DIR,hasChronaDatabaseSecret:'CHRONA_DATABASE_SECRET' in process.env,tokenMatches:process.env.CHRONA_AGENT_TOKEN==='private-run-token'}));
 const mode=${JSON.stringify(mode)};
 const sessionId=process.argv[process.argv.indexOf('--session-id')+1];
 const sessionDir=process.argv[process.argv.indexOf('--session-dir')+1];
@@ -27,19 +27,6 @@ const emit = x => process.stdout.write(JSON.stringify(x)+'\\r\\n');
 const reply=(c,data={})=>emit({id:c.id,type:'response',command:c.type,success:true,data});
 function run() {
  streaming=true; cycle++; emit({type:'agent_start'});
- if(mode==='tool-ids') {
-  for(const id of ['tool1','call_1|fc_1','x'.repeat(200)+'a','x'.repeat(200)+'b',process.env.CHRONA_AGENT_TOKEN]) {
-   emit({type:'tool_execution_start',toolCallId:id,toolName:'bash',args:{command:'raw private arguments'}});
-   emit({type:'tool_execution_end',toolCallId:id,toolName:'bash',result:{content:[]}});
-  }
- }
- if(mode==='details') {
-  emit({type:'message_start',message:{role:'assistant'}});
-  for(let i=0;i<300;i++) emit({type:'message_update',assistantMessageEvent:{type:'text_delta',delta:'safe '+process.env.CHRONA_AGENT_TOKEN}});
-  emit({type:'tool_execution_start',toolCallId:'tool1',toolName:'bash',args:{command:'TOP SECRET RAW ARGS',headers:{authorization:'Bearer private'}}});
-  emit({type:'tool_execution_end',toolCallId:'tool1',toolName:'bash',result:{content:[{type:'text',text:'TOP SECRET RAW RESULT'}]}});
-  emit({type:'message_end',message:{role:'assistant',content:[{type:'thinking',thinking:'TOP SECRET THINKING'},{type:'text',text:'Final safe '+process.env.CHRONA_AGENT_TOKEN}]}});
- }
  setTimeout(()=>{
   if(mode==='error') emit({type:'message_end',message:{role:'assistant',stopReason:'error',errorMessage:'failed '+process.env.CHRONA_AGENT_TOKEN}});
   streaming=false; writeFileSync('completed-cycles.txt',String(cycle));emit({type:'agent_end'});
@@ -94,7 +81,7 @@ process.stdin.on('end',()=>process.exit(0));
   const agentDir = await mkdtemp(join(tmpdir(), "chrona-pi-profile-"));
   const options = { command, agentDir, expectedVersion: "0.85.0", chronaExtension: join(cwd, "bridge.ts"), agentUrl: "http://127.0.0.1:1234/api/steward-agent" };
   const provider = createPiProvider(options);
-  const input: ProviderRunInput = { runId: "run", token: "private-run-token", lane: "foreground", cwd, sessionDir: join(cwd, ".chrona/sessions"), sessionId: "previous-id", systemPrompt: "Fixture platform instructions", resources: "configured", prompt: "hello", deadline: new Date(Date.now() + 4000) };
+  const input: ProviderRunInput = { runId: "run", token: "private-run-token", lane: "foreground", cwd, sessionDir: join(cwd, ".chrona/sessions"), sessionId: null, systemPrompt: "Fixture platform instructions", resources: "configured", prompt: "hello", deadline: new Date(Date.now() + 4000) };
   const commands = async () => (await readFile(join(cwd, "commands.jsonl"), "utf8")).trim().split("\n").map(line => JSON.parse(line));
   return { cwd, command, agentDir, options, provider, input, commands };
 }
@@ -106,14 +93,13 @@ describe("Pi RPC provider", () => {
   test("minimal resources and supplied instructions do not depend on an execution identity", async () => {
     const f = await fixture();
     const provider = createPiProvider({ ...f.options, webExtension: join(f.cwd, "web.ts") });
-    expect((await provider.start({ ...f.input, resources: "minimal", systemPrompt: "Perform a bounded document task.", executionBudget: { maxToolCalls: 2 } }).done).outcome).toBe("finished");
-    const { args, executionToolBudget } = JSON.parse(await readFile(join(f.cwd, "launch.json"), "utf8"));
-    expect(executionToolBudget).toBe("2");
+    expect((await provider.start({ ...f.input, resources: "minimal", systemPrompt: "Perform a bounded document task." }).done).outcome).toBe("finished");
+    const { args } = JSON.parse(await readFile(join(f.cwd, "launch.json"), "utf8"));
     expect(args[args.indexOf("--append-system-prompt") + 1]).toBe("Perform a bounded document task.");
     expect(args).not.toContain("--tools");
     expect(args).not.toContain("--no-skills");
     expect(args).toContain(join(f.cwd, "web.ts"));
-    expect((await provider.start({ ...f.input, sessionId: null, execution: { workId: "work", sessionId: "session", runId: f.input.runId, attemptId: "attempt" } }).done).outcome).toBe("finished");
+    expect((await provider.start({ ...f.input, sessionId: null }).done).outcome).toBe("finished");
     const configured = JSON.parse(await readFile(join(f.cwd, "launch.json"), "utf8")).args;
     expect(configured).not.toContain("--tools");
     expect(configured).toContain(join(f.cwd, "web.ts"));
@@ -161,9 +147,8 @@ describe("Pi RPC provider", () => {
       const launch = JSON.parse(await readFile(join(f.cwd, "launch.json"), "utf8"));
       expect(launch.cwd).toBe(f.cwd);
       expect(launch.hasChronaDatabaseSecret).toBe(false);
-      expect(launch.executionToolBudget).toBeUndefined();
       expect(launch.tokenMatches).toBe(true);
-      expect(launch.args[launch.args.indexOf("--session-id") + 1]).toBe("previous-id");
+      expect(launch.args[launch.args.indexOf("--session-id") + 1]).toBeString();
       expect(launch.args).not.toContain("--tools");
       expect(launch.args).not.toContain("builtin:tool-search");
       expect(launch.args).not.toContain("m_Bad");
@@ -228,52 +213,6 @@ describe("Pi RPC provider", () => {
   });
 });
 
-test("opaque composite and long Provider tool IDs preserve bounded start/end correlation", async () => {
-  const f = await fixture("tool-ids"), records: ExecutionEvent[] = [];
-  const result = await f.provider.start({ ...f.input, sessionId: null, resources: "minimal", execution: { workId: "work", sessionId: "session", runId: "run", attemptId: "attempt" }, detail: { async append(event) { records.push(event); } } }).done;
-  expect(result.outcome).toBe("finished");
-  const starts = records.flatMap(event => event.payload.type === "tool_started" ? [event.payload.toolCallId] : []);
-  const ends = records.flatMap(event => event.payload.type === "tool_finished" ? [event.payload.toolCallId] : []);
-  expect(starts).toHaveLength(5);
-  expect(ends).toEqual(starts);
-  expect(new Set(starts).size).toBe(5);
-  expect(starts[0]).toBe("tool1");
-  expect(starts.every(id => id.length <= 128 && /^[\w:.-]+$/.test(id))).toBe(true);
-  expect(records.every(event => executionEventSchema.safeParse(event).success)).toBe(true);
-  expect(JSON.stringify(records)).not.toContain("raw private arguments");
-  expect(JSON.stringify(records)).not.toContain(f.input.token);
-});
-
-test("execution details are bounded/redacted, recover final after saturation and omit personal steward context", async () => {
-  const f = await fixture("details"), records: ExecutionEvent[] = [];
-  const ref = { workId: "work", sessionId: "coding-session", runId: "run", attemptId: "attempt" };
-  let concurrent = 0, maxConcurrent = 0;
-  const result = await f.provider.start({ ...f.input, systemPrompt: "Fixture execution instructions", resources: "minimal", execution: ref, executionBudget: { maxToolCalls: 5 }, sessionId: null, detail: { async append(event) {
-    concurrent++; maxConcurrent = Math.max(maxConcurrent, concurrent);
-    await Bun.sleep(2); records.push(event); concurrent--;
-  } } }).done;
-  expect(result.outcome).toBe("failed");
-  expect(result.error).toContain("detail is incomplete");
-  expect(maxConcurrent).toBe(1);
-  expect(records.length).toBeLessThanOrEqual(EXECUTION_EVENT_LIMITS.bufferEvents + 4);
-  expect(records.every(event => executionEventSchema.safeParse(event).success)).toBe(true);
-  expect(records.some(event => event.payload.type === "gap")).toBe(true);
-  expect(records.findLast(event => event.payload.type === "message")?.payload).toMatchObject({ text: "Final safe [redacted]", complete: true });
-  expect(records.at(-1)?.payload).toMatchObject({ type: "state", stopConfirmed: true });
-  expect(JSON.stringify(records)).not.toContain("TOP SECRET");
-  expect(JSON.stringify(records)).not.toContain(f.input.token);
-  const launch = JSON.parse(await readFile(join(f.cwd, "launch.json"), "utf8"));
-  const prompt = launch.args[launch.args.indexOf("--append-system-prompt") + 1];
-  expect(prompt).toBe("Fixture execution instructions");
-  expect(launch.args).not.toContain("--tools");
-  expect(launch.executionToolBudget).toBe("5");
-  expect(existsSync(join(f.cwd, "content"))).toBe(false);
-});
-test("detail append failure is surfaced after process exit and final delivery still attempted", async () => {
-  const f = await fixture("details"); let finalAttempted = false;
-  const result = await f.provider.start({ ...f.input, sessionId: null, execution: { workId: "work", sessionId: "session", runId: "run", attemptId: "attempt" }, detail: { async append(event) { if (event.payload.type === "message" && event.payload.complete) finalAttempted = true; throw new Error("Disk unavailable"); } } }).done;
-  expect(result.outcome).toBe("failed"); expect(finalAttempted).toBe(true);
-});
 test("content areas are host links under content/ and stale links are replaced", async () => {
   const f = await fixture();
   const files = join(f.cwd, "content-files"), old = join(f.cwd, "content-old");
@@ -284,39 +223,38 @@ test("content areas are host links under content/ and stale links are replaced",
   expect(existsSync(join(f.input.cwd, "content", "old"))).toBe(false);
 });
 
-describe("Pi execution resume", () => {
-  const execution = { workId: "work", sessionId: "technical-session", runId: "run", attemptId: "attempt" };
+describe("Pi Agent resume", () => {
   test.each(["missing", "wrong-id", "wrong-cwd", "malformed"])("%s disk context fails visibly before launch", async kind => {
     const f = await fixture();
+    f.input.sessionId = "previous-id";
     if (kind !== "missing") {
       await mkdir(f.input.sessionDir, { recursive: true });
       await writeFile(join(f.input.sessionDir, "saved.jsonl"), kind === "malformed" ? "invalid\n" : JSON.stringify({ type: "session", id: kind === "wrong-id" ? "other-id" : f.input.sessionId, cwd: kind === "wrong-cwd" ? join(f.cwd, "other-project") : f.cwd }) + "\n");
     }
-    const records: ExecutionEvent[] = [];
-    const result = await f.provider.start({ ...f.input, execution, detail: { async append(event) { records.push(event); } } }).done;
+    const result = await f.provider.start(f.input).done;
     expect(result.outcome).toBe("failed");
     expect(result.error).toContain("Pi resume context");
     expect(existsSync(join(f.cwd, "launch.json"))).toBe(false);
     expect(existsSync(join(f.cwd, "commands.jsonl"))).toBe(false);
-    expect(records.at(-1)?.payload).toMatchObject({ type: "state", status: "failed", stopConfirmed: true });
   });
   test.each(["normal", "missing-session-id"])("%s RPC session identity fails before prompting", async mode => {
     const f = await fixture(mode);
+    f.input.sessionId = "previous-id";
     await mkdir(f.input.sessionDir, { recursive: true });
     await writeFile(join(f.input.sessionDir, "saved.jsonl"), JSON.stringify({ type: "session", id: f.input.sessionId, cwd: f.cwd }) + "\n");
-    const result = await f.provider.start({ ...f.input, execution }).done;
+    const result = await f.provider.start(f.input).done;
     expect(result.outcome).toBe("failed");
     expect(result.error).toContain("different session");
     expect(result.sessionId).toBe(f.input.sessionId);
     expect((await f.commands()).map(c => c.type)).toEqual(["get_state"]);
   });
-  test("a fresh execution persists context and a later execution resumes it before prompting", async () => {
+  test("a fresh Agent Run persists context and a later Run resumes it before prompting", async () => {
     const f = await fixture("resume");
-    const first = await f.provider.start({ ...f.input, execution, sessionId: null, prompt: "Remember the first instruction." }).done;
+    const first = await f.provider.start({ ...f.input, sessionId: null, prompt: "Remember the first instruction." }).done;
     expect(first.outcome).toBe("finished");
     expect(first.sessionId).toBeString();
     const saved = await readFile(join(f.input.sessionDir, `fixture_${first.sessionId}.jsonl`), "utf8");
-    const second = await f.provider.start({ ...f.input, execution: { ...execution, attemptId: "attempt-2" }, sessionId: first.sessionId, prompt: "Continue using the saved instruction." }).done;
+    const second = await f.provider.start({ ...f.input, sessionId: first.sessionId, prompt: "Continue using the saved instruction." }).done;
     expect(second).toEqual({ outcome: "finished", sessionId: first.sessionId, error: null });
     expect(await readFile(join(f.cwd, "loaded-context.txt"), "utf8")).toBe(saved);
     expect(saved).toContain("Remember the first instruction.");

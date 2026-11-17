@@ -2,7 +2,6 @@ import { resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { providerText } from "@chrona/domain/steward/provider";
 import { PiEvents } from "./pi-events";
-import { PiDetail } from "./pi-detail";
 import { PiRawRecords, nativeError, nativeRequest, nativeResponse, piRunInput, promptCommands } from "./pi-native";
 import { validatePiSessionResume } from "./pi-session-resume";
 import { piTranscript } from "./pi-transcript";
@@ -49,7 +48,6 @@ function messageError(message: RecordValue): string | null {
 class PiRun {
   private child: PiProcess | undefined;
   private events: PiEvents | undefined;
-  private detail: PiDetail | undefined;
   private raw: PiRawRecords | undefined;
   private secrets: string[] = [];
   private sessionId: ProviderRunInput["sessionId"];
@@ -73,7 +71,6 @@ class PiRun {
   private killTimer: ReturnType<typeof setTimeout> | undefined;
   private idle: ReturnType<typeof setTimeout> | undefined;
   private runningTools = 0;
-  private toolCalls = 0;
   private complete!: (result: Result) => void;
   private rejectDone!: (error: unknown) => void;
   readonly done = new Promise<Result>((resolveDone, rejectDone) => { this.complete = resolveDone; this.rejectDone = rejectDone; });
@@ -81,15 +78,12 @@ class PiRun {
 
   constructor(private input: ProviderRunInput, private idleMs?: number, private nativeTimeoutMs = 30_000) {
     this.sessionId = input.sessionId;
-    this.resumeSessionId = input.execution ? input.sessionId : null;
+    this.resumeSessionId = input.sessionId;
   }
   /** Idle cancellation is opt-in; silent model turns have no implicit Run time limit. */
   private touch(event?: RecordValue) {
     if (event?.type === "tool_execution_start") {
       this.runningTools++;
-      this.toolCalls++;
-      // The extension's pre-tool hook enforces admission; this observes already-started tools only.
-      if (this.input.executionBudget && this.toolCalls > this.input.executionBudget.maxToolCalls) void this.abortWith("failed", "Execution tool budget exceeded").catch(() => {});
     }
     if (event?.type === "tool_execution_end") this.runningTools = Math.max(0, this.runningTools - 1);
     clearTimeout(this.idle);
@@ -115,8 +109,6 @@ class PiRun {
     void (async () => {
       await bounded(this.events?.close() ?? Promise.resolve(), 1000).catch(() => {});
       let error: string | undefined;
-      try { await this.detail?.close(result.outcome === "finished" ? "completed" : "failed"); }
-      catch { error = "Execution detail is incomplete; recover the final snapshot"; }
       try { await this.raw?.close(); }
       catch (cause) { error = cause instanceof Error ? this.redact(cause.message) : "Pi raw event stream is incomplete"; }
       this.complete(error ? { ...result, outcome: "failed", error } : result);
@@ -250,7 +242,6 @@ class PiRun {
     this.raw?.receive(event);
     this.touch(event);
     this.events?.receive(event);
-    this.detail?.receive(event);
   }
   private receive(value: unknown) {
     const event = object(value);
@@ -320,18 +311,13 @@ class PiRun {
   private spawn(config: PiLaunchConfig) {
     const browser = config.browserExtension ? config.options.browsers?.ensure() ?? null : null;
     return (config.options.launch ?? launchPiProcess)({ file: config.command, args: piArguments(config, this.input, this.input.systemPrompt, browser), cwd: resolve(this.input.cwd), helperPath: config.options.processHelper,
-      env: { ...piEnvironment(config), CHRONA_AGENT_URL: config.options.agentUrl, CHRONA_AGENT_TOKEN: this.input.token, ...(this.input.executionBudget ? { CHRONA_EXECUTION_MAX_TOOL_CALLS: String(this.input.executionBudget.maxToolCalls) } : {}), ...(browser ? { CHRONA_BROWSER: browser } : {}) } });
+      env: { ...piEnvironment(config), CHRONA_AGENT_URL: config.options.agentUrl, CHRONA_AGENT_TOKEN: this.input.token, ...(browser ? { CHRONA_BROWSER: browser } : {}) } });
   }
   start(config: PiLaunchConfig) {
     this.secrets = [this.input.token, ...Object.entries(piEnvironment(config)).flatMap(([key, value]) => key.endsWith("API_KEY") && value ? [value] : [])];
     const events = this.input.events;
     if (events?.raw) this.raw = new PiRawRecords(events.raw.bind(events), this.secrets, message => this.stop("failed", message));
-    const input = events ? { ...this.input, events: { ...events, usage: async (value: Parameters<typeof events.usage>[0]) => { this.detail?.emit({ type: "usage", input: value.input, output: value.output }); await events.usage(value); } } } : this.input;
-    this.events = new PiEvents(input, this.secrets, record => this.writeUi(record), message => { void this.abortWith("failed", message).catch(() => {}); });
-    if (this.input.execution && this.input.detail) {
-      this.detail = new PiDetail(this.input, this.secrets);
-      this.detail.emit({ type: "state", status: "running", cancelRequested: false, stopConfirmed: false });
-    }
+    this.events = new PiEvents(this.input, this.secrets, record => this.writeUi(record), message => { void this.abortWith("failed", message).catch(() => {}); });
     if (this.input.deadline !== null) {
       const remaining = this.input.deadline.getTime() - Date.now();
       if (!Number.isFinite(remaining) || remaining <= 0) { this.stop("timed_out", "Pi deadline exceeded"); return; }
@@ -370,7 +356,6 @@ class PiRun {
     } finally { this.pending.delete(id); }
   }
   private async nativeCommand({ type, fields, callerId }: ReturnType<typeof nativeRequest>) {
-    if (type === "bash" && this.input.executionBudget) throw nativeError("unsupported", "Native bash cannot bypass the Run tool admission guard");
     const wasSettled = this.sessionSettled, version = ++this.epoch;
     if (promptCommands.has(type)) this.sessionSettled = false;
     if (type === "abort") return nativeResponse(await this.nativeAbort(), callerId, this.secrets);

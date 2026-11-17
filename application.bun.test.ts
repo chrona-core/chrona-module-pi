@@ -68,7 +68,7 @@ test("execution is kernel-only and settings require a routed owner call", async 
   await expect(f.application.handle("configure", { view: true }, owner, "owner-call")).resolves.toMatchObject({ effective: { profile: f.profile } });
   expect(f.snapshots).toHaveLength(0); expect(f.calls).toHaveLength(0);
 });
-test("launch snapshots model/thinking/profile; callbacks bind raw, questions and details to the supplied identity", async () => {
+test("launch snapshots model/thinking/profile; callbacks bind raw and questions to the supplied identity", async () => {
   const f = await setup();
   await f.application.handle("configure", { config: { model: "configured/model", thinking: "high" } }, owner, "owner-call");
   await f.application.handle("start", { ...f.request, providerOptions: { model: "run/model", thinking: "minimal" } }, kernel);
@@ -179,4 +179,19 @@ test("Pi application health reuses its version observation across adapters and c
     expect(await app.handle("health", {}, kernel)).toMatchObject({available:true,complete:true});
     expect(await readFile(counter,"utf8")).toBe("probe\n");
   } finally { await app.stop(); }
+});
+
+
+test("Pi preserves kernel cwd and session storage while rejecting launch identity in providerOptions", async () => {
+  const f = await setup();
+  const cwd = join(f.data, "prepared-project"), sessionDir = join(f.data, "sessions", "context", "pi");
+  await mkdir(cwd); await mkdir(sessionDir, { recursive: true });
+  const request = { ...f.request, cwd, sessionDir };
+  for (const name of ["cwd", "sessionDir", "sessionId", "runId", "token", "operationId", "callbacks"]) {
+    await expect(f.application.handle("start", { ...request, operationId: `invalid-${name}`, providerOptions: { [name]: "replacement" } }, kernel)).rejects.toThrow();
+  }
+  expect(f.inputs).toHaveLength(0);
+  await f.application.handle("start", request, kernel);
+  expect(f.inputs[0]).toMatchObject({ cwd, sessionDir, runId: request.runId, token: request.token, sessionId: null });
+  f.finish(); await f.application.stop();
 });
