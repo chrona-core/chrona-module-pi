@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join} from "node:path";
 import type { ModuleCall, ModuleEvent, ProviderTranscriptItem } from "@chrona/contracts/steward";
 import { moduleEventReplySchema } from "@chrona/contracts/steward";
 import { PI_TRANSCRIPT_MAX_BYTES, type PiTranscriptPage } from "@chrona/pi";
-import { createModuleChannel } from "../../../packages/kernel/src/modules/module-channel";
+import { createModuleChannel } from "../Chrona/packages/kernel/src/modules/module-channel";
 
 const now = "2026-11-11T00:00:00.000Z";
 test("actual SDK keeps the same live Pi host responsive after oversized transcript; pages preserve the complete UTF-8 transcript", async () => {
@@ -32,11 +32,11 @@ test("actual SDK keeps the same live Pi host responsive after oversized transcri
     });
     await writeFile(join(sessions, "fixture.jsonl"), records.join(""));
     recent.id = `oversized.jsonl:${Buffer.byteLength(JSON.stringify({ type: "message", message: { role: "user", content: "🙂".repeat(300000) } }) + "\n")}:0`;
+    await writeFile(join(data, "pi-host.json"), JSON.stringify({ agentDir: profile, chronaExtension: "/fixture/bridge", agentUrl: "http://fixture.invalid" }), { mode: 0o600 });
     child = Bun.spawn([process.execPath, "--no-install", join(import.meta.dir, "transcript-sdk.fixture.ts")], {
-      cwd: resolve(import.meta.dir, "../../../../../../.."), stdin: "ignore", stdout: "pipe", stderr: "pipe",
+      cwd: import.meta.dir, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       env: { ...process.env, CHRONA_IPC_ENDPOINT: channel.endpoint, CHRONA_IPC_TOKEN: channel.token, CHRONA_DATA: data,
-        CHRONA_MODULE_BINDINGS: JSON.stringify({ web: "web-fixture" }),
-        CHRONA_PROVIDER_CONFIGURATION: JSON.stringify({ agentDir: profile, chronaExtension: "/fixture/bridge", agentUrl: "http://fixture.invalid" }), CHRONA_PROVIDER_MODEL_ENV: "{}" },
+        CHRONA_MODULE_BINDINGS: JSON.stringify({ web: "web-fixture" }) },
     });
     const event = (id: string, args: Record<string, unknown>): ModuleEvent => ({ now, params: {}, bindings: { web: "web-fixture" }, trigger: { kind: "tool", id, firedAt: now, args, caller: { kind: "kernel" } } });
     async function tool(id: string, args: Record<string, unknown>) {

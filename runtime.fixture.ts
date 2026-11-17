@@ -3,7 +3,7 @@ import { mock } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProviderRunInput } from "@chrona/contracts/steward";
-import { piTranscriptPage, PI_TRANSCRIPT_MAX_BYTES } from "../../../packages/pi/src/pi-transcript";
+import { piTranscriptPage, PI_TRANSCRIPT_MAX_BYTES } from "./adapter/src/pi-transcript";
 
 type Trigger = { id: string; args: Record<string, unknown>; caller?: { kind: string }; call?: { id: string } };
 let tool!: (value: Trigger) => Promise<{ result: unknown }>, activated!: () => Promise<unknown>, disconnect!: () => void;
@@ -22,16 +22,14 @@ mock.module("@chrona/pi", () => ({ piTranscriptPage, PI_TRANSCRIPT_MAX_BYTES, PI
   start(input: ProviderRunInput) { starts++; runs.push(input); return { done: new Promise(resolve => { finish = resolve; }), async inject() {}, async abort() {}, async native(request: Record<string, unknown>) { return { type: "response", request, instance: starts }; } }; },
 }; } }));
 if (scenario === "invalid") {
-  process.env.CHRONA_PROVIDER_CONFIGURATION = '{"privateHostValue":';
-  await assert.rejects(import("./runtime.js"), { message: "Pi host configuration is invalid" });
+  await writeFile(join(data, "pi-host.json"), '{"privateHostValue":');
+  await assert.rejects(import("./runtime.js"), { message: `Pi configuration could not be read: ${join(data, "pi-host.json")}` });
   assert.equal(configurations.length, 0);
 } else {
   const profile = join(data, "profile"); await mkdir(profile, { mode: 0o700 });
   await writeFile(join(profile, "settings.json"), JSON.stringify({ defaultProvider: "local", defaultModel: "fixture", defaultThinkingLevel: "high" }));
-  process.env.CHRONA_PROVIDER_CONFIGURATION = JSON.stringify({ command: "/fake/pi", agentDir: profile, chronaExtension: "/host/bridge", agentUrl: "http://host/runtime" });
-  process.env.CHRONA_PROVIDER_MODEL_ENV = JSON.stringify({ OPENAI_API_KEY: "fixture-only-credential", CHRONA_UNSAFE_CARRIER: "must-not-install" });
+  await writeFile(join(data, "pi-host.json"), JSON.stringify({ command: "/fake/pi", agentDir: profile, chronaExtension: "/host/bridge", agentUrl: "http://host/runtime", environment: { OPENAI_API_KEY: "fixture-only-credential", CHRONA_UNSAFE_CARRIER: "must-not-install" } }));
   await (scenario === "artifact" ? import("./runtime.js") : import("./runtime"));
-  assert.equal(process.env.CHRONA_PROVIDER_CONFIGURATION, undefined); assert.equal(process.env.CHRONA_PROVIDER_MODEL_ENV, undefined);
   assert.equal(process.env.OPENAI_API_KEY, "fixture-only-credential"); assert.equal(process.env.CHRONA_UNSAFE_CARRIER, undefined);
   await activated(); assert.equal(calls[0]!.target, "agent.register");
   assert.deepEqual(calls[1]!.target, { moduleId: "web-module-id", tool: "page-set" });

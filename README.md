@@ -1,6 +1,6 @@
 # Pi Provider 应用
 
-`pi` 是可选预装的普通应用。激活时通过 `agent.register` 登记自己，再通过现有 Web `page-set` 登记“Pi 设置”页面。执行工具仅对内核可见；配置和本地模型选项工具对所有者可见，由普通应用路由验证当前所有者权限。
+`pi` 是独立维护的普通应用。激活时通过 `agent.register` 登记自己，再通过现有 Web `page-set` 登记“Pi 设置”页面。执行工具仅对内核可见；配置和本地模型选项工具对所有者可见，由普通应用路由验证当前所有者权限。
 
 本应用拥有 `createPiProvider`、进程操作收据、停止协调和 Pi 配置选择。内核拥有 Run 准入、预算、能力、提供方身份绑定与回调授权；`@chrona/pi` 拥有 Pi 进程协议。应用不使用内置 Agent 的特权准入接口，也不要求内核导入 Pi。
 
@@ -9,9 +9,9 @@
 在仓库根目录运行：
 
 ```sh
-bun run packages/engine/src/modules/steward/applications/pi/build.ts
-bun test packages/engine/src/modules/steward/applications/pi
-bun run packages/engine/src/modules/steward/applications/pi/test.ts
+bun build.ts
+bun test .
+bun test.ts
 ```
 
 应用目录的 `bun run build` 和 `bun run test` 同样可用；后者先构建，再运行完整假提供方测试与随发行版本附带的作者测试。构建生成 `module.json`、`runtime.js`、`test.js` 以及导入入口。构建不安装依赖。测试仅使用假适配器和临时目录，运行时检查通过 Bun 子进程模拟源码及发行产物，不启动真实 Pi、模型或账号。
@@ -32,7 +32,7 @@ bun run packages/engine/src/modules/steward/applications/pi/test.ts
 
 ## 当前用户的 Pi 配置
 
-宿主可传入直接的 `PiProviderOptions` JSON 对象 `CHRONA_PROVIDER_CONFIGURATION`，以及选定模型环境变量的对象 `CHRONA_PROVIDER_MODEL_ENV`。前者不使用额外 `pi` 包装层。环境变量只按适配器允许的键安装到本进程（包括保留来源的 `PI_CODING_AGENT_DIR`），随后删除两个传输变量。宿主保留扩展、桥接地址和进程辅助程序等启动配置的控制权。应用未配置时仍可登记和展示设置；执行可用性由健康检查报告。
+应用从自身私有 dataDir 的 `pi-host.json` 读取可执行程序、资源和模型环境。Agent 桥接地址默认取通用宿主的无凭据 `CHRONA_KERNEL_URL` origin 加 `/api/steward-agent`，扩展路径来自本仓 `adapter/resources/`；不读取主仓 Pi 专属环境传输对象。详情见 [开发与启动配置](DEVELOPMENT.md)。未配置可执行程序时仍可登记和展示设置；执行可用性由健康检查报告。
 
 所有者通过 `configure` 选择 `profile`、`model`、`thinking`，或通过 `clear:true` 恢复继承。`config` 和页面 `form` 都替换整组覆盖值；表单空值表示继承。思考强度使用 Pi 的 `off/minimal/low/medium/high/xhigh/max`。保存不调用模型，也不修改 Pi 配置目录里的资源。
 

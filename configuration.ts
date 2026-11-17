@@ -6,7 +6,7 @@ import { isAbsolute, join, normalize, resolve } from "node:path";
 import { z } from "zod";
 import { THINKING_LEVELS } from "@chrona/contracts/steward";
 import type { PiProviderOptions } from "@chrona/pi";
-import { transcriptRedactor } from "@chrona/logging/redaction";
+import { transcriptRedactor } from "./adapter/src/transcript-redaction";
 import { writeJournal } from "./journal";
 
 export { THINKING_LEVELS };

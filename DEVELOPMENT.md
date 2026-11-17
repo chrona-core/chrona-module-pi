@@ -1,11 +1,11 @@
-# pi 开发与离线检查
+# pi 源码与检查
 
-此仓库拥有应用源码、许可证、构建输入、锁、材料和测试。无已核验远端，仅本地 main。
+本仓库维护应用源码及应用私有测试。Chrona 主仓只提供通用 kernel、宿主、CLI、SDK 与合同；不再保存应用源码、应用共享业务包或固定应用副本。应用间组合测试放在拥有者的 `integration/`，使用同级 `chrona-module-*` checkout；通用 kernel/宿主测试依赖使用同级 `Chrona/` checkout。这些路径用于开发组合，不是自动安装或运行应用的入口。
 
-应用纯逻辑使用 Bun；涉及 kernel、DB、SDK 或其他应用的测试在 Chrona 的锁定组合中执行。Chrona 通过 `bun run applications:restore` 从固定 bundle 与精确 artifact 输入恢复 `packages/engine/src/modules/steward/applications/pi`，不读取同级 checkout。恢复目录与原目录保持相对深度，使既有组合测试继续使用真实 SDK 与临时数据库。
+`adapter/` 保留 Pi RPC、completion、transcript、会话恢复、扩展资源和测试的唯一源码；`@chrona/pi` 是本仓自有 adapter 产生的私有运行/类型制品。`build.ts`、`dependencies.ts`、`declaration-bundle.ts` 在应用内构建 runtime、测试及 vendor，并按真实输出计算材料记录；它们只复用同级 Chrona 的通用合同与已安装通用构建依赖，不调用主仓应用生成器。`bun build.ts` 是应用自有打包入口。构建前须在授权环境准备 TypeScript、Zod 及 Chrona 通用依赖；本轮没有安装。
 
-在 Chrona 根运行 `bun run test:bun packages/engine/src/modules/steward/applications/pi/<file>.bun.test.ts`；测试 wrapper、浏览器入口与宿主集成逐文件映射见 Chrona `docs/tasks/cleanup-and-reorg/stage-4-test-mapping.json`。独立纯逻辑测试也可在本仓库 `bun test <file>`，宿主组合测试不在此承诺独立运行。
+`host.ts` 从应用私有数据目录的 `pi-host.json` 读取启动配置。设置绝对 `command`；`agentUrl` 默认由通用宿主提供的无凭据 origin `CHRONA_KERNEL_URL` 加 `/api/steward-agent`，也可在该文件显式指定；可设置 `agentDir`、`expectedVersion`、`model`、`resourcesFile`、`webExtension`、`browserExtension`、`workspaceRoot`。Chrona/浏览器扩展默认取本应用 `adapter/resources/`，`processHelper` 默认取通用宿主给出的 `CHRONA_PROCESS_HELPER`。可选 `environment` 只接收 `PI_MODEL_ENVIRONMENT_KEYS` 列出的 Pi 模型环境；包含凭据时此文件须由运行用户私有保存。配置文件应为 mode 600，不写入源码或日志。启动通过普通 ModuleEntry/sandbox；generation 与后代停止回执复用通用宿主能力。
 
-修改后先运行适用检查并提交本地 main，再更新 Chrona 的固定 bundle、artifact 输入与 lock。Git bundle 不含 chrona-material.json 声明的 artifact；主仓库同时固定其精确字节与 executable mode，恢复必须通过完整材料校验。不得仅改 checkout 而跳过输入更新。
+`adapter/src/transcript-redaction.ts` 私有实现 transcript 截断前脱敏，复用通用日志文本脱敏原语；测试也归本应用。
 
-发行/暂停政策由 Chrona 声明；本仓库存在不表示自动运行或发行。Remind 仍暂停。
+本轮仅迁移/编辑源码并做文件、导入、JSON 与 diff 静态检查；没有构建、编译、测试、lint、typecheck、安装、模型/服务调用、提交或推送。`vendor/`、既有运行/浏览器制品、`bun.lock`、`chrona-material.json`、材料 hash/pin 未因本轮源码修改而重算，旧制品不能证明这些修改已生效。后续发行须在授权构建后生成真实制品、锁与材料记录。

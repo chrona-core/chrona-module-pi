@@ -1,23 +1,10 @@
 import { chrona, on, onDisconnect, ModelError, type CallTarget } from "chrona";
-import { createPiProvider, PI_MODEL_ENVIRONMENT_KEYS, type PiProviderOptions } from "@chrona/pi";
+import { createPiProvider } from "@chrona/pi";
 import { createPiApplication, publicError } from "./application";
 import { createBrowsers } from "./browser";
+import { readPiHostConfiguration } from "./host";
 
-function hostObject(name: string): Record<string, unknown> {
-  try {
-    const value: unknown = JSON.parse(process.env[name] ?? "{}");
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error();
-    return value as Record<string, unknown>;
-  } catch { throw new Error("Pi host configuration is invalid"); }
-}
-const options: PiProviderOptions = { chronaExtension: "", agentUrl: "", ...hostObject("CHRONA_PROVIDER_CONFIGURATION") };
-const environment = hostObject("CHRONA_PROVIDER_MODEL_ENV");
-for (const key of PI_MODEL_ENVIRONMENT_KEYS) {
-  const value = environment[key];
-  if (typeof value === "string") process.env[key] = value;
-}
-delete process.env.CHRONA_PROVIDER_MODEL_ENV;
-delete process.env.CHRONA_PROVIDER_CONFIGURATION;
+const options = await readPiHostConfiguration(chrona.paths.data);
 function target(value: string): CallTarget {
   if (/^(agent|runtime-callback)\./.test(value)) return value as CallTarget;
   const boundary = value.indexOf("."), moduleId = chrona.dependencies[value.slice(0, boundary)];

@@ -12,5 +12,8 @@
   "scripts": {
     "build": "bun run build.ts",
     "test": "bun run build.ts && bun test . && bun run test.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
   }
 }

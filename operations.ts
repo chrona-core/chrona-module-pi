@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { runtimeStartSchema, runtimeOutcomeSchema, type ProviderAdapter, type ProviderRunInput, type RuntimeStart } from "@chrona/contracts/steward";
-import { transcriptRedactor } from "@chrona/logging/redaction";
+import { transcriptRedactor } from "./adapter/src/transcript-redaction";
 import { writeJournal } from "./journal";
 import { currentHostGeneration, hostStopped } from "./host-recovery";
 import { launchConfigurationSchema, type LaunchConfiguration } from "./configuration";
@@ -53,7 +53,7 @@ export function createPiOperations(data: string, prepare: PrepareRun, settled?: 
     return { ...saved, ...(!saved.outcome ? { failure: true } : {}) };
   }
   async function recover(file: string, row: Row) {
-    if (row.handle || row.outcome || !row.hostGeneration || !await hostStopped(data, row.hostGeneration)) return;
+    if (row.handle || row.outcome || !row.hostGeneration || !await hostStopped(row.hostGeneration)) return;
     const outcome: Outcome = { outcome: "failed", sessionId: null, error: "Pi host exited; descendants are confirmed stopped. External effects remain unconfirmed; work was not replayed." };
     await writeJournal(file, { digest: row.digest, hostGeneration: row.hostGeneration, configuration: row.configuration, outcome, completion: row.completion });
     row.outcome = outcome; row.failure = false;

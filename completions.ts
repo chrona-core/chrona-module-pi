@@ -1,6 +1,6 @@
 import type { ProviderAdapter } from "@chrona/contracts/steward";
 import { runtimeCompletionSchema } from "@chrona/contracts/steward";
-import { transcriptRedactor } from "@chrona/logging/redaction";
+import { transcriptRedactor } from "./adapter/src/transcript-redaction";
 import type { z } from "zod";
 import type { completionInput } from "./schema";
 import type { LaunchConfiguration } from "./configuration";

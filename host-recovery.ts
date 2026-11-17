@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 
 /** Set only by the trusted process launcher, never by an operation request. */
 export function currentHostGeneration() {
@@ -9,9 +9,10 @@ export function currentHostGeneration() {
 }
 
 /** A trusted receipt proves descendant termination, never business success. */
-export async function hostStopped(data: string, generation: string): Promise<boolean> {
-  if (process.platform !== "linux" || generation === currentHostGeneration() || !/^[a-f0-9]{64}$/.test(generation)) return false;
-  const path = join(data, ".host-stops", generation + ".json");
+export async function hostStopped(generation: string): Promise<boolean> {
+  const current = process.env.CHRONA_HOST_STOP_RECEIPT;
+  if (process.platform !== "linux" || !current || !isAbsolute(current) || generation === currentHostGeneration() || !/^[a-f0-9]{64}$/.test(generation)) return false;
+  const path = join(dirname(current), generation + ".json");
   try {
     const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
@@ -26,5 +27,8 @@ export async function hostStopped(data: string, generation: string): Promise<boo
       try { await directory.sync(); } finally { await directory.close(); }
       return true;
     } finally { await file.close(); }
-  } catch { return false; }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") console.error(JSON.stringify({ component: "pi-host-recovery", event: "stop_receipt_unreadable", error: error instanceof Error ? error.message : String(error) }));
+    return false;
+  }
 }

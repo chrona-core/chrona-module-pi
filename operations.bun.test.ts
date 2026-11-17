@@ -59,16 +59,23 @@ test("restart preserves unknown launch capacity and refuses replay without trust
 test("trusted old-host descendant receipt permits failed settlement, never replay", async () => {
   if (process.platform !== "linux") return;
   const f = await setup(), generation = "a".repeat(64), digest = createHash("sha256").update(JSON.stringify(runtimeStartSchema.parse(f.request))).digest("hex");
-  await mkdir(join(f.data, "operations")); await mkdir(join(f.data, ".host-stops"));
+  const receipts = join(f.data, "host-receipts"), previousReceipt = process.env.CHRONA_HOST_STOP_RECEIPT;
+  await mkdir(join(f.data, "operations")); await mkdir(receipts);
+  process.env.CHRONA_HOST_STOP_RECEIPT = join(receipts, "b".repeat(64) + ".json");
+  try {
   const key = createHash("sha256").update(JSON.stringify("one")).digest("hex");
   await writeFile(join(f.data, "operations", `${key}.json`), JSON.stringify({ digest, hostGeneration: generation }), { mode: 0o600 });
-  const stopped = join(f.data, ".host-stops", `${generation}.json`);
+  const stopped = join(receipts, `${generation}.json`);
   await writeFile(stopped, JSON.stringify({ version: 1, generation, state: "stopped", scope: "descendants", treeClean: false }), { mode: 0o600 });
   const operations = createPiOperations(f.data, f.prepare);
   expect(await operations.control("status", { operationId: "one" })).toMatchObject({ outcome: null, failure: true });
   await writeFile(stopped, JSON.stringify({ version: 1, generation, state: "stopped", scope: "descendants", treeClean: true }));
   expect(await operations.control("status", { operationId: "one" })).toMatchObject({ outcome: { outcome: "failed" }, failure: false });
   await operations.start(f.request); expect(f.counts().starts).toBe(0);
+  } finally {
+    if (previousReceipt === undefined) delete process.env.CHRONA_HOST_STOP_RECEIPT;
+    else process.env.CHRONA_HOST_STOP_RECEIPT = previousReceipt;
+  }
 });
 test("missing callbacks fail before claiming or launching; synchronous launch failures remain unknown", async () => {
   const f = await setup(); const { callbacks: _callbacks, ...unbound } = f.request;

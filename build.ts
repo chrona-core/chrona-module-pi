@@ -45,4 +45,10 @@ export async function buildPiApplication(outputDir = import.meta.dir, sourceDir 
   await writeFile(join(outputDir, "index.ts"), 'import "./runtime.js";\n');
   await writeFile(join(outputDir, "test-entry.ts"), 'import "./test.js";\n');
 }
-if (import.meta.main) await buildPiApplication(process.argv[2] ?? import.meta.dir);
+export async function packagePiApplication(directory = import.meta.dir) {
+  const { assembleModuleDependencies, stageModuleMaterial } = await import("./dependencies");
+  await buildPiApplication(directory);
+  await assembleModuleDependencies(directory);
+  return stageModuleMaterial(directory, { artifacts: ["runtime.js", "test.js", "vendor"], build: { commands: ["bun build.ts"], toolchain: `Bun ${Bun.version}`, target: "bun" } });
+}
+if (import.meta.main) await packagePiApplication(process.argv[2] ?? import.meta.dir);
