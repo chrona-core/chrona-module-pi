@@ -3,7 +3,7 @@ import { mock } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProviderRunInput } from "@chrona/contracts/steward";
-import { piTranscriptPage, PI_TRANSCRIPT_MAX_BYTES } from "../../../../../../pi/src/pi-transcript";
+import { piTranscriptPage, PI_TRANSCRIPT_MAX_BYTES } from "../../../packages/pi/src/pi-transcript";
 
 type Trigger = { id: string; args: Record<string, unknown>; caller?: { kind: string }; call?: { id: string } };
 let tool!: (value: Trigger) => Promise<{ result: unknown }>, activated!: () => Promise<unknown>, disconnect!: () => void;

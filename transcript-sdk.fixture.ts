@@ -1,6 +1,6 @@
 import { mock } from "bun:test";
 import * as pi from "@chrona/pi";
-import { piTranscript } from "../../../../../../pi/src/pi-transcript";
+import { piTranscript } from "../../../packages/pi/src/pi-transcript";
 import type { ProviderAdapter } from "@chrona/contracts/steward";
 
 // Keep the production SDK, runtime handler, application and transcript reader.

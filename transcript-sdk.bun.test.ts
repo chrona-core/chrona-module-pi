@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import type { ModuleCall, ModuleEvent, ProviderTranscriptItem } from "@chrona/contracts/steward";
 import { moduleEventReplySchema } from "@chrona/contracts/steward";
 import { PI_TRANSCRIPT_MAX_BYTES, type PiTranscriptPage } from "@chrona/pi";
-import { createModuleChannel } from "../../modules/module-channel";
+import { createModuleChannel } from "../../../packages/kernel/src/modules/module-channel";
 
 const now = "2026-11-11T00:00:00.000Z";
 test("actual SDK keeps the same live Pi host responsive after oversized transcript; pages preserve the complete UTF-8 transcript", async () => {
