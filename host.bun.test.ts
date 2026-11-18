@@ -3,6 +3,22 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readPiHostConfiguration } from "./host";
+import { createPiProvider } from "./adapter/src/pi-provider";
+
+test("Pi can load without host configuration but cannot create a provider without its kernel URL", async () => {
+  const data = await mkdtemp(join(tmpdir(), "pi-host-unconfigured-"));
+  const previous = process.env.CHRONA_KERNEL_URL;
+  try {
+    delete process.env.CHRONA_KERNEL_URL;
+    const options = await readPiHostConfiguration(data);
+    expect(options.command).toBe("");
+    expect(options.agentUrl).toBe("");
+    expect(() => createPiProvider(options)).toThrow("Chrona agent URL must be loopback");
+  } finally {
+    if (previous === undefined) delete process.env.CHRONA_KERNEL_URL; else process.env.CHRONA_KERNEL_URL = previous;
+    await rm(data, { recursive: true, force: true });
+  }
+});
 
 test("Pi startup uses its private configuration and local extension resources", async () => {
   const data = await mkdtemp(join(tmpdir(), "pi-host-"));

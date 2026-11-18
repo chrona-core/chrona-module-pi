@@ -25,8 +25,7 @@ export async function readPiHostConfiguration(dataDir: string): Promise<PiProvid
     raw = {};
   }
   const { environment, ...options } = hostConfigurationSchema.parse(raw);
-  const agentUrl = options.agentUrl ?? (process.env.CHRONA_KERNEL_URL ? new URL("/api/steward-agent", process.env.CHRONA_KERNEL_URL).href : undefined);
-  if (!agentUrl) throw new Error("Pi requires CHRONA_KERNEL_URL or an explicit agentUrl");
+  const agentUrl = options.agentUrl ?? (process.env.CHRONA_KERNEL_URL ? new URL("/api/steward-agent", process.env.CHRONA_KERNEL_URL).href : "");
   for (const key of PI_MODEL_ENVIRONMENT_KEYS) {
     const value = environment?.[key];
     if (value !== undefined) process.env[key] = value;

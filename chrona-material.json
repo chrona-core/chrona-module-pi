@@ -87,7 +87,7 @@
   "artifacts": [
     {
       "path": "runtime.js",
-      "sha256": "7f28908b174eb5e191a37cbcde099a459790557e26dd00c9f2801ae350981a50"
+      "sha256": "79374d6fcb74a179a102720399251040e0f0ff94e2b4f1d06a3ba298e606de14"
     },
     {
       "path": "test.js",
