@@ -11,7 +11,7 @@ test("kernel exposes exactly the seven registered Provider APIs", () => {
 test("actual external Pi registration pins public run admission, replay, ownership and queued stop", async () => {
   const f = await registeredRunFixture();
   try {
-    expect(f.module.builtin).toBe(false);
+    expect((await f.ports.db.moduleVersion.findUniqueOrThrow({ where: { moduleId_hash: { moduleId: f.module.id, hash: f.module.activeHash! } } })).source).toBe("external");
     const providers = await f.call<{ items: { id: string; moduleId: string; hash: string; available: boolean }[] }>("providers", {});
     expect(providers.items).toContainEqual(expect.objectContaining({ id: "pi", moduleId: f.module.id, hash: f.module.activeHash, available: true }));
     const binding = await f.ports.db.agentRunProvider.findUniqueOrThrow({ where: { runId: f.admitted.runId } });

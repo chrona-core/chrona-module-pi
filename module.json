@@ -92,8 +92,7 @@
             "type": "string",
             "enum": [
               "foreground",
-              "background",
-              "build"
+              "background"
             ]
           },
           "cwd": {
@@ -194,42 +193,6 @@
               ],
               "additionalProperties": false
             }
-          },
-          "execution": {
-            "type": "object",
-            "properties": {
-              "workId": {
-                "type": "string"
-              },
-              "sessionId": {
-                "type": "string"
-              },
-              "runId": {
-                "type": "string"
-              },
-              "attemptId": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "workId",
-              "sessionId",
-              "runId",
-              "attemptId"
-            ],
-            "additionalProperties": false
-          },
-          "executionBudget": {
-            "type": "object",
-            "properties": {
-              "maxToolCalls": {
-                "type": "number"
-              }
-            },
-            "required": [
-              "maxToolCalls"
-            ],
-            "additionalProperties": false
           },
           "providerOptions": {
             "type": "object",

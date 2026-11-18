@@ -1,5 +1,30 @@
-import { providerQuestionSchema, type ProviderRunInput, type ProviderQuestion, type ProviderAnswer } from "@chrona/contracts/steward";
-import { providerText, providerToolPhase, providerUsage, safeProviderQuestion, validProviderAnswer } from "@chrona/domain/steward/provider";
+import { providerQuestionSchema, providerUsageSchema, type ProviderProgress, type ProviderUsage, type ProviderRunInput, type ProviderQuestion, type ProviderAnswer } from "@chrona/contracts/steward";
+import { providerText, safeProviderQuestion, validProviderAnswer } from "@chrona/domain/steward/provider";
+
+function providerToolPhase(name: unknown): ProviderProgress {
+  const tool = typeof name === "string" && /^[\w:.-]{1,100}$/.test(name) ? name : null;
+  const phases = new Map<string, ProviderProgress["phase"]>([["read", "reading"], ["grep", "reading"], ["find", "reading"], ["ls", "reading"], ["edit", "writing"], ["write", "writing"], ["web_search", "searching"], ["fetch_content", "searching"], ["bash", "executing"]]);
+  const phase = tool ? phases.get(tool) ?? "executing" : "executing";
+  return { phase, tool };
+}
+/** Reject malformed/negative counters. A reset/missing baseline cannot be advertised as a run delta. */
+function providerUsage(current: unknown, baseline?: unknown): ProviderUsage | null {
+  const parse = (value: unknown) => {
+    if (!value || typeof value !== "object") return null;
+    const raw = value as { tokens?: Record<string, unknown>; cost?: unknown; contextUsage?: { tokens?: unknown; contextWindow?: unknown } | null };
+    const parsed = providerUsageSchema.safeParse({ scope: "session", ...raw.tokens, cost: raw.cost, contextTokens: raw.contextUsage?.tokens ?? null, contextWindow: raw.contextUsage?.contextWindow ?? null });
+    return parsed.success ? parsed.data : null;
+  };
+  const sessionId = (value: unknown) => value && typeof value === "object" && "sessionId" in value && typeof value.sessionId === "string" ? value.sessionId : null;
+  const now = parse(current), before = parse(baseline);
+  if (!now) return null;
+  const sameSession = sessionId(current) !== null && sessionId(current) === sessionId(baseline);
+  const keys = ["input", "output", "cacheRead", "cacheWrite", "total", "cost"] as const;
+  if (!before || !sameSession || keys.some(key => now[key] < before[key])) return now;
+  const result = { ...now, scope: "run" as const };
+  for (const key of keys) result[key] = now[key] - before[key];
+  return result;
+}
 
 type RecordValue = Record<string, unknown>;
 export class PiEvents {

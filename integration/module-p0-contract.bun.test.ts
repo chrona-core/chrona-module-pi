@@ -151,6 +151,8 @@ describe("ordinary Pi host stop evidence", () => {
 });
 
 describe("ordinary Pi completion durability", () => {
+  const cleanups: (() => Promise<void>)[] = [];
+  afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
   const args = { commandKey: "completion", prompt: "private prompt", maxOutputTokens: 200, timeoutMs: 5000 };
   async function setup(complete: NonNullable<ProviderAdapter["complete"]>) {
     const data = await mkdtemp(join(tmpdir(), "chrona-p0-pi-completion-"));

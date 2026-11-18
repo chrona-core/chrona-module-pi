@@ -1,3 +1,4 @@
+import { installTestModuleVersion } from "../../Chrona/packages/kernel/src/__testing__/module-release-test-fixture";
 import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -63,7 +64,7 @@ else console.log(JSON.stringify({type:'message_end',message:{role:'assistant',mo
   const ports: StewardPorts = { db, dataDir, publicUrl: null, now: () => new Date(), sandbox: { available: true, isolated: false, startModule: peer.startModule } };
   cleanups.push(async () => { acceptClosure(); await application.stop().catch(() => {}); await moduleSupervisor(ports).stop(); await db.$disconnect(); await rm(dataDir, { recursive: true, force: true }); await rm(dirname(databases.find(row => row.name === "main")!.file), { recursive: true, force: true }); });
   const backend = await db.module.create({ data: { workspaceId, name: "pi", status: "active", activeHash: "pi-v1" } });
-  await db.moduleVersion.create({ data: { moduleId: backend.id, hash: backend.activeHash!, manifest: moduleManifestSchema.parse(manifest()), source: "user", status: "approved", intent: {}, report: {} } });
+  backend.activeHash = await installTestModuleVersion(ports, backend, moduleManifestSchema.parse(manifest()));
   const declaration: AgentProviderRegistration = { ...REGISTRATION, configuration: { ...REGISTRATION.configuration!, revision: settings.revision } };
   await registerAgentProvider(ports, workspaceId, { kind: "module", module: "pi", moduleId: backend.id, hash: backend.activeHash! }, declaration);
   const callerModule = await db.module.create({ data: { workspaceId, name: "completion-caller", status: "active", activeHash: "caller-v1" } });

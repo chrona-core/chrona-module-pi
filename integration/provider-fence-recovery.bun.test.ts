@@ -1,3 +1,4 @@
+import { installTestModuleVersion } from "../../Chrona/packages/kernel/src/__testing__/module-release-test-fixture";
 import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -52,7 +53,7 @@ async function fixture({ activated = false, stage = "unknown", fenceApplication 
   const startProperties = Object.fromEntries(["operationId", "runId", "token", "lane", "cwd", "sessionDir", "prompt", "systemPrompt", "resources", "callbacks", "model", "configurationRevision"].map(key => [key, string]));
   Object.assign(startProperties, { sessionId: { type: ["string", "null"] }, deadline: { type: ["string", "null"] }, providerOptions: object, searchTools: { type: "boolean" }, images: { type: "array", items: object }, extraTools: { type: "array", items: string }, hostPaths: { type: "array", items: string }, content: { type: "array", items: object } });
   const manifest = moduleManifestSchema.parse({ name: backend.name, entry: "index.ts", tests: ["test.ts"], activated, uses: ["agent.register"], effects: [], tools: Object.values(declaration.endpoints).map(name => ({ name, description: name, visibility: ["kernel"], parameters: { type: "object", properties: name === "health" ? {} : name === "start" ? startProperties : { operationId: string } }, output: {} })) });
-  await db.moduleVersion.create({ data: { moduleId: backend.id, hash: backend.activeHash!, manifest, source: "user", status: "approved", intent: {}, report: {} } });
+  backend.activeHash = await installTestModuleVersion(ports, backend, manifest);
   const backendCaller = { kind: "module" as const, module: backend.name, moduleId: backend.id, hash: backend.activeHash! };
   await registerAgentProvider(ports, workspaceId, backendCaller, declaration);
   const app = await db.module.create({ data: { workspaceId, name: "entry-app", activeHash: "app-v1" } });
@@ -87,6 +88,7 @@ test.skipIf(process.platform !== "linux")("cold actual Pi SDK rejects fenced act
   const receipt = (treeClean: boolean) => JSON.stringify({ version: 1, generation, state: "stopped", scope: "descendants", treeClean });
   await writeFile(stopReceipt, receipt(false), { mode: 0o600 });
   const children: ReturnType<typeof Bun.spawn>[] = [];
+  await moduleSupervisor(f.ports).settleModule(f.backend.id);
   f.ports.sandbox!.startModule = input => {
     const child = Bun.spawn([process.execPath, "--no-install", join(import.meta.dir, "../runtime.ts")], {
       cwd: join(import.meta.dir, "../../Chrona"), stdin: "ignore", stdout: "ignore", stderr: "pipe",

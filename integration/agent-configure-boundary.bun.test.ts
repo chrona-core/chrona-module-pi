@@ -1,5 +1,6 @@
+import { installTestModuleVersion } from "../../Chrona/packages/kernel/src/__testing__/module-release-test-fixture";
 import { expect, test } from "bun:test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { moduleManifestSchema } from "@chrona/contracts/steward";
 import { agentFixture } from "./agent-application.fixtures";
@@ -10,13 +11,11 @@ import { startLocalProvider } from "../../Chrona/packages/kernel/src/execution/l
 type Fixture = Awaited<ReturnType<typeof agentFixture>>;
 function owner(f: Fixture): CallOrigin { return { ...kernelOrigin(f.workspaceId), caller: { kind: "owner", via: null } }; }
 async function consumer(f: Fixture, name: string, uses = ["agent.run", "agent.read", "agent.stop"]) {
-  const hash = name + "-v1", source = join(f.ports.dataDir, "platform/store", hash);
-  await mkdir(source);
-  await writeFile(join(source, "index.ts"), `import {chrona,on} from 'chrona';on('tool',async t=>({result:await chrona.call({moduleId:chrona.dependencies.pi,tool:'configure'},t.args)}));`);
+  const source = `import {chrona,on} from 'chrona';on('tool',async t=>({result:await chrona.call({moduleId:chrona.dependencies.pi,tool:'configure'},t.args)}));`;
   const manifest = moduleManifestSchema.parse({ name, entry: "index.ts", tests: ["test.ts"], effects: [], uses, authority: uses.includes("*") ? "owner" : undefined,
     tools: [{ name: "configure-pi", description: "Configure the provider", visibility: ["owner"], parameters: { type: "object", properties: {} }, output: {} }] });
-  const module = await f.ports.db.module.create({ data: { workspaceId: f.workspaceId, name, status: "active", activeHash: hash } });
-  await f.ports.db.moduleVersion.create({ data: { moduleId: module.id, hash, manifest, source: "user", status: "approved", intent: {}, report: {} } });
+  const module = await f.ports.db.module.create({ data: { workspaceId: f.workspaceId, name, status: "active" } });
+  const hash = await installTestModuleVersion(f.ports, module, manifest, name, source);
   return { ...kernelOrigin(f.workspaceId), caller: { kind: "module" as const, module: name, moduleId: module.id, hash } };
 }
 

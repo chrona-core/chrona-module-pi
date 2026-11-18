@@ -40,7 +40,7 @@ test.skipIf(process.platform !== "linux")("killed Pi host and its actual Provide
   await mkdir(join(root, ".host-stops"), { mode: 0o700 });
   const request = { operationId: "killed", runId: "killed", token: "fixture", lane: "foreground", cwd: root, sessionDir: root, sessionId: null, callbacks: crypto.randomUUID(), prompt: "fixture", systemPrompt: "", resources: "minimal", deadline: null };
   const source = `import {createPiOperations} from ${JSON.stringify(join(import.meta.dir, "../operations.ts"))};
-import {spawnSupervised} from ${JSON.stringify(join(import.meta.dir, "../../../Chrona/packages/process/src/index.ts"))};
+import {spawnSupervised} from ${JSON.stringify(join(import.meta.dir, "../../Chrona/packages/process/src/index.ts"))};
 const provider={name:"fixture",start(){const task=spawnSupervised(process.execPath,["-e","setInterval(()=>{},1000)"]); return {done:task.exited.then(()=>new Promise(()=>{})),async abort(){task.stop()},async inject(){}}}};
 await createPiOperations(${JSON.stringify(root)},async request=>({provider,input:{...request,deadline:null}})).start(${JSON.stringify(request)});
 await Bun.write(${JSON.stringify(join(root, "ready"))},"yes");setInterval(()=>{},1000);`;

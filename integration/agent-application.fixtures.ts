@@ -5,6 +5,7 @@ import { assembleModuleDependencies, stageModuleMaterial } from "../dependencies
 import { testDb } from "../../Chrona/packages/kernel/src/__testing__/test-db";
 import { createScriptSandbox } from "../../Chrona/packages/host/src/runtime/script-sandbox";
 import { seedTestModuleRelease } from "../../Chrona/packages/kernel/src/__testing__/module-release-test-fixture";
+import { snapshotModuleMaterial, storeVersionMaterial } from "../../Chrona/packages/kernel/src/modules/module-artifacts";
 import { moduleSupervisor } from "../../Chrona/packages/kernel/src/modules/module-supervisor";
 import { registerSystemModules } from "../../Chrona/packages/kernel/src/system/system-modules";
 import { registerLocalRuntime } from "../../Chrona/packages/kernel/src/execution/local-runtime";
@@ -59,11 +60,12 @@ export async function agentFixture() {
   let cleanup = () => rm(root, { recursive: true, force: true });
   try {
   await mkdir(dataDir); await mkdir(resources);
-  await cp(resolve(import.meta.dir, ".."), join(resources, "pi"), { recursive: true });
+  await cp(resolve(import.meta.dir, ".."), join(resources, "pi"), { recursive: true, filter: path => ![".git", "node_modules"].includes(path.split("/").at(-1)!) });
   // Build only the temporary release so the fake and gateway exercise the same current contract.
   await buildPiApplication(join(resources, "pi"));
   await linkPiFixtureDependencies(join(resources, "pi"));
   await seedTestModuleRelease(resources, "pi");
+  await storeVersionMaterial(join(dataDir, "platform"), await snapshotModuleMaterial(resources, "pi", { verifyTree: true }));
   const cwd = join(root, "work"), profile = join(root, "profile"); await mkdir(cwd); await mkdir(profile, { mode: 0o700 });
   const command = join(root, "pi"), extension = join(root, "extension.ts");
   await writeFile(extension, "");
@@ -102,7 +104,7 @@ process.stdin.on('end',()=>process.exit(0));}
   const release = await resolveExternalRelease(ports, "pi");
   await mkdir(join(dataDir, "platform/store"), { recursive: true });
   await cp(join(resources, "pi"), join(dataDir, "platform/store", release.hash), { recursive: true });
-  const module = await db.module.create({ data: { workspaceId: workspace.id, name: "pi", builtin: false, status: "active", activeHash: release.hash } });
+  const module = await db.module.create({ data: { workspaceId: workspace.id, name: "pi", status: "active", activeHash: release.hash } });
   await db.moduleVersion.create({ data: { moduleId: module.id, hash: release.hash, source: "external", manifest: release.manifest, status: "approved", intent: {}, report: {} } });
   const applicationData = join(dataDir, "platform/data", module.id);
   await mkdir(applicationData, { recursive: true });
@@ -111,7 +113,7 @@ process.stdin.on('end',()=>process.exit(0));}
   // Registration is delivered by the application's real activated handler, never seeded here.
   const registration = await activatedPiRegistration(ports, workspace.id, module.id, release.hash);
   // The other release modules are outside this focused fixture.
-  for (const name of ["web", "mcp", "files", "notify", "events"]) await db.module.create({ data: { workspaceId: workspace.id, name, builtin: true, status: "active", activeHash: "fixture" } });
+  for (const name of ["web", "mcp", "files", "notify", "events"]) await db.module.create({ data: { workspaceId: workspace.id, name, status: "active", activeHash: "fixture" } });
   const until = new Date(Date.now() + 60000), token = "private-agent-run-token";
   await db.run.create({ data: { id: "agent-run", workspaceId: workspace.id, lane: "foreground", trigger: "message", status: "running", provider: "pi", tokenHash: createHash("sha256").update(token).digest("hex"), cwd, prompt: "", deadlineAt: until, leaseUntil: until } });
   const { id: providerId, moduleId, hash, revision, declaration } = registration;
