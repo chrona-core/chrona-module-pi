@@ -29,7 +29,7 @@ export function manifest() {
       // The manifest root is closed by the module tool contract itself.
       delete shape.additionalProperties;
       return { name, description: name === "configure" ? "读取或替换当前用户的 Pi 配置目录、模型和思考强度" : name === "models" ? "从所选本地 Pi 配置发现模型选项，不调用模型" : `Pi ${name}: kernel-bound provider endpoint`,
-        visibility: [name === "configure" || name === "models" ? "owner" : "kernel"], parameters: shape, output: outputShape(z.toJSONSchema(output)) };
+        visibility: [name === "configure" || name === "models" ? "owner" : "kernel"], ...(name === "inspect" ? { readOnly: true } : {}), parameters: shape, output: outputShape(z.toJSONSchema(output)) };
     }),
   };
 }

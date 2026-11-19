@@ -4,8 +4,9 @@ import { PiError } from "./operations";
 
 export const REGISTRATION = agentProviderRegisterInput.parse({
   id: "pi", name: "Pi", protocolVersion: 1,
-  capabilities: { conversation: true, completion: true, native: true, images: true, interactions: true, resume: true },
-  endpoints: { health: "health", start: "start", status: "status", inject: "inject", abort: "abort", release: "release", transcript: "transcript", native: "native", complete: "complete" },
+  capabilities: { conversation: true, completion: true, native: true, images: true, interactions: true, resume: true, liveTranscript: true },
+  endpoints: { health: "health", start: "start", status: "status", inject: "inject", abort: "abort", release: "release", transcript: "transcript", native: "native", complete: "complete", inspect: "inspect" },
+  inspections: [{ query: "models", version: 1, scope: "provider" }, { query: "context", version: 1, scope: "run" }],
   configuration: { tool: "configure", page: "settings" },
 });
 /** Archive before advertising a revision; serialize writes and registration so newer settings cannot be overwritten by an older response. */

@@ -3,7 +3,7 @@ import { mock } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProviderRunInput } from "@chrona/contracts/steward";
-import { piTranscriptPage, PI_TRANSCRIPT_MAX_BYTES } from "./adapter/src/pi-transcript";
+import { piTranscript, piTranscriptPage, PI_TRANSCRIPT_MAX_BYTES } from "./adapter/src/pi-transcript";
 
 type Trigger = { id: string; args: Record<string, unknown>; caller?: { kind: string }; call?: { id: string } };
 let tool!: (value: Trigger) => Promise<{ result: unknown }>, activated!: () => Promise<unknown>, disconnect!: () => void;
@@ -14,7 +14,9 @@ class ModelError extends Error { constructor(readonly code: string, message: str
 mock.module("chrona", () => ({ ModelError, chrona: { paths: { data }, dependencies: { web: "web-module-id" }, async call(target: unknown, args: Record<string, unknown>) { calls.push({ target, args }); return {}; } },
   on(name: string, callback: typeof tool & typeof activated) { if (name === "tool") tool = callback; if (name === "activated") activated = callback; }, onDisconnect(callback: () => void) { disconnect = callback; },
 }));
-mock.module("@chrona/pi", () => ({ piTranscriptPage, PI_TRANSCRIPT_MAX_BYTES, PI_MODEL_ENVIRONMENT_KEYS: ["OPENAI_API_KEY"],
+mock.module("@chrona/pi", () => ({ piTranscriptPage, readPiTranscript: piTranscript, PI_TRANSCRIPT_MAX_BYTES, PI_MODEL_ENVIRONMENT_KEYS: ["OPENAI_API_KEY"],
+  async listPiModels() { return ["fixture/available"]; },
+  async piModelCatalog() { return { defaultModel: null, models: [], nextCursor: null }; },
   piLaunchConfig: (options: Record<string, unknown>) => options,
   piCompletionVersionError() { return null; },
   createPiProvider(options: Record<string, unknown>) { configurations.push(options); return {
@@ -35,6 +37,8 @@ if (scenario === "invalid") {
   assert.deepEqual(calls[1]!.target, { moduleId: "web-module-id", tool: "page-set" });
   for (const id of ["health", "start", "status", "inject", "abort", "release", "native", "transcript", "complete"]) await assert.rejects(tool({ id, args: {}, caller: { kind: "module" }, call: { id: "consumer-call" } }), { code: "forbidden" });
   assert.equal(configurations.length, 0);
+  const models = await tool({ id: "models", args: {}, caller: { kind: "owner" }, call: { id: "owner-call" } });
+  assert.deepEqual((models.result as { items: unknown[] }).items, [{ id: "fixture/available", label: "fixture/available", source: "pi" }]);
   const configurationRevision = (calls[0]!.args.configuration as { revision: string }).revision;
   assert.match(configurationRevision, /^[a-f0-9]{64}$/);
   const request = { configurationRevision, operationId: "fixture-operation", runId: "fixture-run", token: "fixture-token", callbacks: "00000000-0000-4000-8000-000000000001", lane: "foreground", cwd: data, sessionDir: data, sessionId: null, prompt: "fixture", systemPrompt: "", resources: "configured", deadline: null };
@@ -43,6 +47,9 @@ if (scenario === "invalid") {
   assert.equal(runs[0]!.providerOptions!.thinking, "high"); assert.equal(configurations[0]!.model, "local/fixture");
   assert.deepEqual(await kernel("native", { operationId: request.operationId, request: { type: "future_feature", "opaque-key": null } }), { response: { type: "response", request: { type: "future_feature", "opaque-key": null }, instance: 1 } });
   assert.equal(configurations.length, 1); assert.equal(starts, 1);
+  await writeFile(join(data, "configuration.json"), "invalid configuration");
+  await writeFile(join(data, "session.jsonl"), JSON.stringify({ type: "message", message: { role: "assistant", content: "retained reply" } }) + "\n");
+  assert.deepEqual(await kernel("transcript", { sessionDir: data, limit: 1 }), [{ id: "session.jsonl:0:0", at: "", kind: "text", text: "retained reply" }]);
   finish({ outcome: "finished", sessionId: null, error: null });
   disconnect();
 }

@@ -27,15 +27,15 @@ test("Pi normalizes session history, excludes user prompts/thinking, reports mal
     const entries = [
       { type: "session", id: "s" },
       { type: "message", message: { role: "user", content: "private prompt" } },
-      { type: "message", timestamp: "2026-11-07T12:00:00Z", message: { role: "assistant", content: [{ type: "thinking", thinking: "private thought" }, { type: "text", text: "检查测试" }, { type: "toolCall", name: "bash", arguments: { command: "bun test" } }] } },
-      { type: "message", timestamp: "2026-11-07T12:00:01Z", message: { role: "toolResult", toolName: "bash", isError: true, content: [{ type: "text", text: "failed" }, { type: "text", text: "reason" }] } },
+      { type: "message", timestamp: "2026-11-07T12:00:00Z", message: { role: "assistant", content: [{ type: "thinking", thinking: "private thought" }, { type: "text", text: "检查测试" }, { type: "toolCall", id: "tool-call-a", name: "bash", arguments: { command: "bun test" } }] } },
+      { type: "message", timestamp: "2026-11-07T12:00:01Z", message: { role: "toolResult", toolCallId: "tool-call-a", toolName: "bash", isError: true, content: [{ type: "text", text: "failed" }, { type: "text", text: "reason" }] } },
     ];
     await writeFile(join(sessionDir, "session.jsonl"), entries.map(entry => JSON.stringify(entry)).join("\n") + "\nmalformed\nnull\n42\n");
     const result = await piTranscript({ sessionDir, limit: 20 });
     expect(contents(result)).toEqual([
       { at: "2026-11-07T12:00:00Z", kind: "text", text: "检查测试" },
-      { at: "2026-11-07T12:00:00Z", kind: "tool", tool: "bash", args: '{"command":"bun test"}' },
-      { at: "2026-11-07T12:00:01Z", kind: "result", tool: "bash", text: "failed\nreason", error: true },
+      { at: "2026-11-07T12:00:00Z", kind: "tool", callId: "tool-call-a", tool: "bash", args: '{"command":"bun test"}' },
+      { at: "2026-11-07T12:00:01Z", kind: "result", callId: "tool-call-a", tool: "bash", text: "failed\nreason", error: true },
       { at: "", kind: "text", text: "[Pi transcript gap] malformed_record" },
     ]);
     expect(await piTranscript({ sessionDir, limit: 1 })).toEqual(result.slice(-1));

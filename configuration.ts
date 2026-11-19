@@ -1,3 +1,4 @@
+import { listPiModels } from "@chrona/pi";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdir, open, readFile, realpath, stat } from "node:fs/promises";
@@ -33,7 +34,7 @@ export const configureOutput = z.object({ config: configurationSchema, revision:
 export const modelsInput = z.object({}).strict();
 export const modelsOutput = z.object({
   profile: z.string(), profileSource: profileSourceSchema,
-  items: z.array(z.object({ id: modelSchema, label: z.string(), source: z.enum(["models.json", "settings.json"]) }).strict()),
+  items: z.array(z.object({ id: modelSchema, label: z.string(), source: z.enum(["models.json", "settings.json", "pi"]) }).strict()),
   options: z.array(z.object({ value: z.string(), label: z.string() }).strict()),
   warnings: z.array(z.string()), limited: z.boolean(),
 }).strict();
@@ -114,16 +115,26 @@ function adapterOptions(host: PiProviderOptions): PiProviderOptions & { thinking
     browserExtension: host.browserExtension, browsers: host.browsers, workspaceRoot: host.workspaceRoot,
     idleTimeoutMs: host.idleTimeoutMs, nativeTimeoutMs: host.nativeTimeoutMs, launch: host.launch, processHelper: host.processHelper };
 }
-async function discoverModels(effective: z.infer<typeof effectiveSchema>) {
+async function discoverModels(effective: z.infer<typeof effectiveSchema>, options: PiProviderOptions) {
   const warnings = [...effective.warnings], items: z.infer<typeof modelsOutput>["items"] = [], seen = new Set<string>();
   let limited = false;
-  const add = (candidate: unknown, source: "models.json" | "settings.json") => {
+  const add = (candidate: unknown, source: "models.json" | "settings.json" | "pi") => {
     const parsed = modelSchema.safeParse(candidate);
     if (!parsed.success || seen.has(parsed.data)) return;
     if (items.length >= 500) { limited = true; return; }
     seen.add(parsed.data); items.push({ id: parsed.data, label: parsed.data, source });
   };
-  if (effective.profileStatus === "available") {
+  let liveCatalog = false;
+  if (options.command) {
+    try {
+      for (const model of await listPiModels({ ...options, agentDir: effective.profile })) add(model, "pi");
+      liveCatalog = true;
+    } catch (error) {
+      console.error(JSON.stringify({ component: "pi", event: "models_list_failed", error: error instanceof Error ? error.message : String(error) }));
+      warnings.push("Pi 实时模型目录暂不可读，显示配置中声明的模型。");
+    }
+  }
+  if (!liveCatalog && effective.profileStatus === "available") {
     const models = await profileJson(effective.profile, "models.json", warnings);
     // Only the documented provider/model ID fields are examined. No auth.json, endpoints, headers, names or keys.
     const entries = record(models.providers) ? Object.entries(models.providers) : [];
@@ -223,5 +234,5 @@ export function createConfiguration(data: string, hostOptions: PiProviderOptions
     if (current.effective.thinking) options.thinking = current.effective.thinking;
     return { ...current, options };
   }
-  return { configure, models: async () => discoverModels((await view()).effective), snapshot, archive };
+  return { configure, models: async () => discoverModels((await view()).effective, host), snapshot, archive };
 }

@@ -16,14 +16,14 @@ import { startLocalProvider } from "../../Chrona/packages/kernel/src/execution/l
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 type Read = { run: { runId: string; status: string; active: boolean }; items: { sequence: number; kind: string; payload: unknown }[]; nextCursor: string; ended: boolean; interactions: { id: string; status: string }[]; transcript: unknown[] };
 const owner = (f: Fixture) => ({ ...kernelOrigin(f.workspaceId), caller: { kind: "owner" as const, via: null } });
-async function install(f: Fixture, name: string, source: string, tools = ["relay"], uses = ["agent.run", "agent.read", "agent.write", "agent.stop", "agent.native"], readOnly = false) {
+async function install(f: Fixture, name: string, source: string, tools = ["relay"], uses = ["agent.run", "agent.inspect", "agent.read", "agent.write", "agent.stop", "agent.native"], readOnly = false) {
   const manifest = moduleManifestSchema.parse({ name, entry: "index.ts", effects: [], uses, model: { tier: "any", maxCalls: 1, maxOutputTokens: 100 }, tests: ["test.ts"],
     tools: tools.map(name => ({ name, ...(readOnly ? { readOnly: true } : {}), description: "Offline SDK fixture", visibility: ["owner"], parameters: { type: "object", properties: name === "relay" ? { tool: { type: "string" }, args: { type: "string" }, key: { type: "string" } } : {} }, output: {} })) });
   const module = await f.ports.db.module.create({ data: { workspaceId: f.workspaceId, name, status: "active" } });
   const hash = await installTestModuleVersion(f.ports, module, manifest, name, source);
   return { module, hash, manifest, origin: { ...kernelOrigin(f.workspaceId), caller: { kind: "module" as const, module: name, moduleId: module.id, hash } } };
 }
-const relaySource = `import {chrona,on} from 'chrona';on('tool',async t=>{try{return {result:await chrona.call('agent.'+t.args.tool,JSON.parse(t.args.args),t.args.tool==='read'?{}:{key:t.args.key})}}catch(e){return {result:{error:e.code,message:e.message}}}});`;
+const relaySource = `import {chrona,on} from 'chrona';on('tool',async t=>{try{return {result:await chrona.call('agent.'+t.args.tool,JSON.parse(t.args.args),['inspect','read'].includes(t.args.tool)?{}:{key:t.args.key})}}catch(e){return {result:{error:e.code,message:e.message}}}});`;
 
 // Follow the public kernel Run/context protocol through the SDK.
 test("SDK Agent contexts preserve ownership, selected tools, scoped reads, interactions and confirmed stop evidence", async () => {
@@ -33,7 +33,10 @@ test("SDK Agent contexts preserve ownership, selected tools, scoped reads, inter
     f.ports.onQueued = () => new Promise<void>(() => {});
     const consumer = await install(f, "context-consumer", relaySource);
     const relay = async (tool: string, args: unknown, key = tool): Promise<unknown> => (await callSync(f.ports, owner(f), "context-consumer.relay", { tool, args: JSON.stringify(args), key })).output;
-    const request = { providerId: "pi", prompt: "Module-owned explicit prompt", lane: "background" };
+    expect(await relay("inspect", { providerId: "pi", query: "models", version: 1 })).toMatchObject({ query: "models", version: 1,
+      data: { nextCursor: null, models: [{ id: "fixture/reasoning", effort: { options: ["low", "high"], default: "low" } }] },
+    });
+    const request = { providerId: "pi", prompt: "Module-owned explicit prompt stream-fixture", lane: "background" };
     expect(await relay("run", { ...request, cwd: "/host" }, "forged-path")).toMatchObject({ error: "invalid" });
     const first = (await relay("run", request, "first")) as { runId: string; contextId: string };
     expect(first).toMatchObject({ status: "queued", active: true });
@@ -65,7 +68,8 @@ test("SDK Agent contexts preserve ownership, selected tools, scoped reads, inter
     const running = (await relay("run", { ...input, tools: [{ moduleId: sink.id, tool: "observe" }] }, "running")) as { runId: string };
     const runs = createRuns(f.ports, f.workspaceId), claimed = (await runs.claimNext("background"))!;
     expect(claimed.id).toBe(running.runId);
-    const handle = await startLocalProvider(f.ports, f.workspaceId, { ...f.input, runId: claimed.id, token: claimed.token, cwd: claimed.cwd, lane: "background", deadline: claimed.deadlineAt });
+    const logDir = join(claimed.cwd, ".chrona", "sessions");
+    const handle = await startLocalProvider(f.ports, f.workspaceId, { ...f.input, runId: claimed.id, token: claimed.token, cwd: claimed.cwd, sessionDir: logDir, prompt: request.prompt, lane: "background", deadline: claimed.deadlineAt });
     liveRuns.set(claimed.id, handle);
     const tools = createTools(f.ports), catalog = await tools.catalog(claimed.token);
     expect(catalog.map(tool => tool.name)).toEqual(["m_context_sink_observe"]);
@@ -76,22 +80,29 @@ test("SDK Agent contexts preserve ownership, selected tools, scoped reads, inter
     await expect(tools.call(claimed.token, "m_context_consumer_relay", {})).rejects.toMatchObject({ code: "forbidden" });
     const activeTarget = { runId: running.runId };
     expect(await relay("run", input, "concurrent-running")).toMatchObject({ error: "conflict" });
-    const write = { ...activeTarget, input: { kind: "message", text: "continue the explicit prompt" } };
-    expect(await relay("write", write, "live-write")).toEqual({ accepted: true });
-    expect(await relay("write", write, "live-write")).toEqual({ accepted: true });
-    expect(await relay("write", { ...write, input: { kind: "message", text: "changed" } }, "live-write")).toMatchObject({ error: "conflict" });
     for (let i = 0; i < 2; i++) await f.ports.db.$transaction(tx => appendRunEventIn(tx, running.runId, "progress", { type: "progress", value: { phase: "working" } }, f.ports.now()));
-    const logDir = join(claimed.cwd, ".chrona", "sessions");
     await mkdir(logDir, { recursive: true });
     await writeFile(join(logDir, "fixture.jsonl"), [
       { type: "message", timestamp: "2026-11-07T00:00:00Z", message: { role: "user", content: "private user prompt" } },
       { type: "message", timestamp: "2026-11-07T00:00:01Z", message: { role: "assistant", content: [{ type: "thinking", text: "private reasoning" }, { type: "text", text: "Visible model reply" }] } },
     ].map(row => JSON.stringify(row)).join("\n"));
-    const textPage = (await relay("read", activeTarget)) as Read;
+    const textPage = await eventually(async () => await relay("read", { ...activeTarget, live: true }) as Read,
+      value => !!value.transcript?.some(item => (item as { partial?: boolean }).partial));
     const userRecord = { type: "message", timestamp: "2026-11-07T00:00:00Z", message: { role: "user", content: "private user prompt" } };
     const offset = Buffer.byteLength(JSON.stringify(userRecord) + "\n");
-    expect(textPage.transcript).toEqual([{ id: `fixture.jsonl:${offset}:0`, at: "2026-11-07T00:00:01Z", kind: "text", text: "Visible model reply" }]);
+    expect(await relay("inspect", { ...activeTarget, query: "context", version: 1 })).toEqual({ query: "context", version: 1,
+      data: { windowTokens: 100000, usedTokens: 101 },
+    });
+    expect(textPage.ended).toBe(false);
+    expect(textPage.transcript).toEqual([
+      { id: `fixture.jsonl:${offset}:0`, at: "2026-11-07T00:00:01Z", kind: "text", text: "Visible model reply" },
+      expect.objectContaining({ id: running.runId, kind: "text", partial: true, text: "Visible partial reply" }),
+    ]);
     for (const privateText of [f.ports.dataDir, "private reasoning", "private user prompt"]) expect(JSON.stringify(textPage)).not.toContain(privateText);
+    const write = { ...activeTarget, input: { kind: "message", text: "continue the explicit prompt" } };
+    expect(await relay("write", write, "live-write")).toEqual({ accepted: true });
+    expect(await relay("write", write, "live-write")).toEqual({ accepted: true });
+    expect(await relay("write", { ...write, input: { kind: "message", text: "changed" } }, "live-write")).toMatchObject({ error: "conflict" });
     let questionReady!: (id: string) => void;
     const ready = new Promise<string>(resolve => { questionReady = resolve; });
     const channel = createProviderChannel(f.ports, claimed, async request => { questionReady(request.id); });

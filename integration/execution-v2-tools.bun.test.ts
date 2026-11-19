@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { agent } from "../../Chrona/packages/kernel/src/system/agent";
 import { registeredRunFixture, eventually } from "./registered-run.fixtures";
 
-test("kernel exposes exactly the seven registered Provider APIs", () => {
-  expect(agent.tools.map(tool => tool.name).sort()).toEqual(["native", "providers", "read", "register", "run", "stop", "write"]);
+test("kernel exposes exactly the eight registered Provider APIs", () => {
+  expect(agent.tools.map(tool => tool.name).sort()).toEqual(["inspect", "native", "providers", "read", "register", "run", "stop", "write"]);
 });
 
 test("actual external Pi registration pins public run admission, replay, ownership and queued stop", async () => {

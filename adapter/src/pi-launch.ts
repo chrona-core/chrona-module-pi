@@ -122,6 +122,33 @@ export async function inspectPiLaunch(config: PiLaunchConfig, reuseHealthVersion
   if (pi.version !== config.version) return "Pi version does not match the configured pin";
   return null;
 }
+export async function listPiModels(options: PiProviderOptions): Promise<string[]> {
+  const config = piLaunchConfig(options);
+  if (!isAbsolute(config.command) || !validProfile(config)) throw new Error("Pi model catalog is unavailable");
+  const child = (options.launch ?? launchPiProcess)({ file: config.command, args: ["--list-models"],
+    cwd: existsSync(config.agentDir) ? config.agentDir : homedir(), env: piEnvironment(config), timeoutMs: 5000, helperPath: options.processHelper });
+  let output = "";
+  let exceeded = false;
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => {
+    if (exceeded) return;
+    if (Buffer.byteLength(output) + Buffer.byteLength(chunk) > 256 * 1024) { exceeded = true; child.kill("SIGKILL"); }
+    else output += chunk;
+  });
+  child.stderr.resume();
+  child.stdin.on("error", () => child.kill("SIGKILL"));
+  child.stdin.end();
+  const { code } = await child.closed;
+  if (code !== 0 || exceeded) throw new Error("Pi could not list available models");
+  const lines = output.split(/\r?\n/);
+  const header = lines.findIndex(line => /^provider\s+model\s+context\s+max-out\b/.test(line.trim()));
+  if (header < 0 && !lines.some(line => /^No models available\./.test(line.trim()))) throw new Error("Pi model catalog format is unknown");
+  return header < 0 ? [] : lines.slice(header + 1).flatMap(line => {
+    const row = line.trim().match(/^(\S+)\s+(\S+)\s+\S+\s+\S+\s+(?:yes|no)\s+(?:yes|no)\s*$/);
+    return row ? [`${row[1]}/${row[2]}`] : [];
+  });
+}
+
 function contentAreas(input: ProviderRunInput) {
   return (input.content ?? []).map(area => {
     if (!/^[a-z][a-z0-9-]{1,40}$/.test(area.name) || !isAbsolute(area.dir) || realpathSync(area.dir) !== area.dir) throw new Error("Unsafe content directory");

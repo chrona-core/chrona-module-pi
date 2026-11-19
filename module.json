@@ -512,6 +512,9 @@
           "limit": {
             "type": "number"
           },
+          "runId": {
+            "type": "string"
+          },
           "page": {
             "type": "boolean"
           },
@@ -591,6 +594,62 @@
             "additionalProperties": false
           }
         ]
+      }
+    },
+    {
+      "name": "inspect",
+      "description": "Pi inspect: kernel-bound provider endpoint",
+      "visibility": [
+        "kernel"
+      ],
+      "readOnly": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "args": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": true
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "configurationRevision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "version"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "required": [
+          "query",
+          "version",
+          "data"
+        ],
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
       }
     },
     {
@@ -978,7 +1037,8 @@
                   "type": "string",
                   "enum": [
                     "models.json",
-                    "settings.json"
+                    "settings.json",
+                    "pi"
                   ]
                 }
               },

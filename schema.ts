@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { runtimeStartSchema, runtimeOperationSchema, runtimeOutcomeSchema, runtimeHealthSchema, runtimeCompletionSchema, runtimeTranscriptSchema, providerNativeInput, providerNativeOutput, THINKING_LEVELS } from "@chrona/contracts/steward";
+import { runtimeStartSchema, runtimeOperationSchema, runtimeOutcomeSchema, runtimeHealthSchema, runtimeCompletionSchema, runtimeTranscriptSchema, agentInspectOutput, providerInspectInput, providerNativeInput, providerNativeOutput, THINKING_LEVELS } from "@chrona/contracts/steward";
 import { configureInput, configureOutput, modelsInput, modelsOutput, modelSchema } from "./configuration";
 export const completionInput = z.object({
   commandKey: z.string().min(1).max(128), configurationRevision: z.string().min(1).max(128).optional(), model: modelSchema.optional(), thinking: z.enum(THINKING_LEVELS).optional(),
@@ -18,7 +18,8 @@ export const toolSchemas = {
   inject: [runtimeOperationSchema.extend({ message: z.string().max(2 * 1024 * 1024), images: runtimeStartSchema.shape.images }), z.object({ accepted: z.literal(true) }).strict()],
   abort: [runtimeOperationSchema, z.object({ requested: z.literal(true) }).strict()],
   release: [runtimeOperationSchema, z.object({ released: z.literal(true) }).strict()],
-  transcript: [z.object({ sessionDir: z.string().min(1).max(8192), limit: z.number().int().min(1).max(300), page: z.literal(true).optional(), cursor: z.string().min(1).max(16384).optional() }).strict().refine(value => !value.cursor || value.page === true), z.union([runtimeTranscriptSchema, transcriptPageSchema])],
+  transcript: [z.object({ sessionDir: z.string().min(1).max(8192), limit: z.number().int().min(1).max(300), runId: z.string().min(1).max(128).optional(), page: z.literal(true).optional(), cursor: z.string().min(1).max(16384).optional() }).strict().refine(value => !value.cursor || value.page === true), z.union([runtimeTranscriptSchema, transcriptPageSchema])],
+  inspect: [providerInspectInput, agentInspectOutput],
   native: [providerNativeInput, providerNativeOutput],
   complete: [completionInput, runtimeOperationSchema],
   configure: [configureInput, configureOutput], models: [modelsInput, modelsOutput],

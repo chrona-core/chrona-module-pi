@@ -12,12 +12,13 @@ try {
   let finish!: (value: { outcome: "finished"; sessionId: null; error: null }) => void;
   const operations = createPiOperations(data, async raw => ({
     provider: { name: "fake", async health() { return { available: true, sandboxed: false, error: null }; }, start() {
-      starts++; return { done: new Promise(resolve => { finish = resolve; }), async inject() {}, async abort() {}, async native(request) { nativeCalls++; return { type: request.type, session: "same-handle" }; } };
+      starts++; return { done: new Promise(resolve => { finish = resolve; }), async inject() {}, async abort() {}, async contextUsage() { return { windowTokens: 100000, usedTokens: null }; }, async native(request) { nativeCalls++; return { type: request.type, session: "same-handle" }; } };
     } }, input: { ...raw, deadline: null } as ProviderRunInput,
   }));
   const input = { operationId: "author-test", runId: "author-test", token: "private-token", callbacks: "00000000-0000-4000-8000-000000000001", lane: "foreground", cwd: data, sessionDir: data, sessionId: null, prompt: "private-prompt", systemPrompt: "", resources: "configured", deadline: null };
   await Promise.all([operations.start(input), operations.start(input)]);
   assert.equal(starts, 1);
+  assert.deepEqual(await operations.contextUsage(input.operationId), { windowTokens: 100000, usedTokens: null });
   assert.deepEqual(await operations.control("native", { operationId: input.operationId, request: { type: "future-feature" } }), { response: { type: "future-feature", session: "same-handle" } });
   assert.equal(nativeCalls, 1); assert.equal(starts, 1);
   await operations.control("abort", { operationId: input.operationId });

@@ -4,8 +4,8 @@ import { providerText } from "@chrona/domain/steward/provider";
 import { PiEvents } from "./pi-events";
 import { PiRawRecords, nativeError, nativeRequest, nativeResponse, piRunInput, promptCommands } from "./pi-native";
 import { validatePiSessionResume } from "./pi-session-resume";
-import { piTranscript } from "./pi-transcript";
-import { runtimeToolCallSchema, type ProviderAdapter, type ProviderRunInput } from "@chrona/contracts/steward";
+import { piTranscript, PI_TRANSCRIPT_MAX_BYTES } from "./pi-transcript";
+import { runtimeToolCallSchema, type ProviderAdapter, type ProviderRunInput, type ProviderTranscriptItem } from "@chrona/contracts/steward";
 import { createLoopbackChannel, type LoopbackChannel } from "chrona/transport";
 import { createPiCompletion } from "./pi-completion";
 import { launchPiProcess, type PiProcess } from "./pi-process";
@@ -15,6 +15,20 @@ export type { PiProviderOptions } from "./pi-launch";
 type Result = Awaited<ReturnType<ProviderAdapter["start"]>["done"]>;
 type RecordValue = Record<string, unknown>;
 const object = (value: unknown): RecordValue => value !== null && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : {};
+const liveReplies = new Map<string, { owner: object; item: ProviderTranscriptItem }>();
+
+export async function readPiTranscript(input: { sessionDir: string; limit: number; runId?: string }) {
+  const history = await piTranscript(input);
+  const reply = liveReplies.get(input.sessionDir);
+  if (!reply || reply.item.id !== input.runId) return history;
+  const item = reply.item;
+  let bytes = Buffer.byteLength(JSON.stringify(history)) + Buffer.byteLength(JSON.stringify(item)) + 1;
+  while (history.length && (history.length >= input.limit || bytes > PI_TRANSCRIPT_MAX_BYTES)) {
+    bytes -= Buffer.byteLength(JSON.stringify(history.shift())) + 1;
+  }
+  return [...history, item];
+}
+
 const imagesFor = (images: ProviderRunInput["images"]) => images?.map(image => ({ type: "image", data: image.base64, mimeType: image.mime }));
 function bounded<T>(request: Promise<T>, ms = 250): Promise<T> {
   return new Promise((resolveRequest, reject) => {
@@ -57,6 +71,8 @@ class PiRun {
   private sequence = 0;
   private epoch = 0;
   private streaming = false;
+  private liveText = "";
+  private liveAt = "";
   private sessionSettled = false;
   private retrying = false;
   private checking = false;
@@ -104,6 +120,7 @@ class PiRun {
   private finalize() {
     if (this.settled) return;
     this.settled = true;
+    this.clearLiveReply();
     void this.toolChannel?.close();
     clearTimeout(this.timer); clearTimeout(this.poll); clearTimeout(this.killTimer); clearTimeout(this.idle);
     for (const request of this.pending.values()) request.reject(new Error("Pi run ended"));
@@ -121,6 +138,7 @@ class PiRun {
   private unconfirmedClosure(error: unknown) {
     if (this.settled) return;
     this.settled = true;
+    this.clearLiveReply();
     void this.toolChannel?.close();
     clearTimeout(this.timer); clearTimeout(this.poll); clearTimeout(this.killTimer); clearTimeout(this.idle);
     this.events?.interrupt();
@@ -141,9 +159,9 @@ class PiRun {
     // done resolves only after process exit: the engine may commit the cwd immediately.
     this.killTimer = setTimeout(() => this.child?.kill("SIGKILL"), 500);
   }
-  private send(type: string, fields: RecordValue = {}, cancelling = false, envelope = false): Promise<RecordValue> {
+  private send(type: string, fields: RecordValue = {}, cancelling = false, envelope = false, observation = false): Promise<RecordValue> {
     if (this.closing || this.settled || this.cancellation && !cancelling || !this.child) return Promise.reject(new Error("Pi run is not active"));
-    const id = String(++this.sequence);
+    const id = observation ? `inspect:${++this.sequence}` : String(++this.sequence);
     return new Promise((resolveRequest, reject) => {
       this.pending.set(id, { type, envelope, resolve: resolveRequest, reject });
       // Stream writes are ordered; the callback waits for the write to be flushed.
@@ -154,7 +172,7 @@ class PiRun {
   }
   private readyToCheck() { return this.sessionSettled && !this.retrying; }
   private isComplete(version: number, state: RecordValue) {
-    return version === this.epoch && this.readyToCheck() && !this.streaming && !this.events?.waiting && state.isStreaming === false && state.isCompacting !== true && state.pendingMessageCount === 0 && this.pending.size === 0 && this.nativeInFlight === 0;
+    return version === this.epoch && this.readyToCheck() && !this.streaming && !this.events?.waiting && state.isStreaming === false && state.isCompacting !== true && state.pendingMessageCount === 0 && ![...this.pending.keys()].some(id => !id.startsWith("inspect:")) && this.nativeInFlight === 0;
   }
   private async checkEnd() {
     if (this.inactive() || !this.readyToCheck() || this.checking) return;
@@ -208,7 +226,8 @@ class PiRun {
     this.pending.delete(String(event.id));
     if (event.command !== request.type || typeof event.success !== "boolean") {
       request.reject(nativeError("unknown", "Pi RPC response correlation failed"));
-      this.stop("failed", "Pi RPC response correlation failed"); return;
+      if (!String(event.id).startsWith("inspect:")) this.stop("failed", "Pi RPC response correlation failed");
+      return;
     }
     if (request.envelope) request.resolve(event);
     else if (event.success === true) request.resolve(object(event.data));
@@ -234,14 +253,50 @@ class PiRun {
     if (event.aborted === true) this.modelError = "Pi run aborted";
     this.pollEnd(0);
   }
-  private async inspectStats(cancelling = false) {
-    const id = String(this.sequence + 1);
-    try { return await bounded(this.send("get_session_stats", {}, cancelling), 250); }
+  async contextUsage() {
+    if (this.inactive()) throw nativeError("unavailable", "Pi run is not active");
+    await this.resourcesReady;
+    if (this.pending.size >= 32) throw nativeError("unavailable", "Too many pending Pi protocol requests");
+    const stats = await this.inspectStats(false, true);
+    const usage = object(stats.contextUsage);
+    const window = usage.contextWindow, used = usage.tokens;
+    return {
+      windowTokens: typeof window === "number" && Number.isSafeInteger(window) && window > 0 ? window : null,
+      usedTokens: typeof used === "number" && Number.isSafeInteger(used) && used >= 0 ? used : null,
+    };
+  }
+  private async inspectStats(cancelling = false, observation = false) {
+    const id = observation ? `inspect:${this.sequence + 1}` : String(this.sequence + 1);
+    try { return await bounded(this.send("get_session_stats", {}, cancelling, false, observation), 250); }
     finally { this.pending.delete(id); }
   }
   private writeUi(record: RecordValue): Promise<void> {
     if (this.inactive() || !this.child) return Promise.reject(new Error("Pi run is not active"));
     return new Promise((resolveWrite, reject) => this.child!.stdin.write(`${JSON.stringify(record)}\n`, error => error ? reject(error) : resolveWrite()));
+  }
+  private clearLiveReply() {
+    if (liveReplies.get(this.input.sessionDir)?.owner === this) liveReplies.delete(this.input.sessionDir);
+    this.liveText = "";
+    this.liveAt = "";
+  }
+  private updateLiveReply(event: RecordValue) {
+    const update = object(event.assistantMessageEvent);
+    if (this.inactive() || update.type !== "text_delta" || typeof update.delta !== "string") return;
+    const limit = 24_000;
+    const secrets = this.secrets.filter(Boolean).sort((a, b) => b.length - a.length);
+    const capacity = limit + (secrets[0]?.length ?? 0);
+    if (this.liveText.length >= capacity) return;
+    this.liveText = (this.liveText + update.delta).slice(0, capacity);
+    this.liveAt ||= new Date().toISOString();
+    const masked = secrets.reduce((text, secret) => text.replaceAll(secret, "[redacted]"), this.liveText);
+    let end = masked.length;
+    for (const secret of secrets) {
+      for (let size = Math.min(masked.length, secret.length - 1); size > 0; size--) {
+        if (masked.endsWith(secret.slice(0, size))) { end = Math.min(end, masked.length - size); break; }
+      }
+    }
+    liveReplies.set(this.input.sessionDir, { owner: this, item: { id: this.input.runId, at: this.liveAt, kind: "text", partial: true,
+      text: providerText(masked.slice(0, end), [], limit, true) } });
   }
   private observe(event: RecordValue) {
     this.raw?.receive(event);
@@ -250,14 +305,20 @@ class PiRun {
   }
   private receive(value: unknown) {
     const event = object(value);
+    if (event.type === "response" && typeof event.id === "string" && event.id.startsWith("inspect:")) {
+      this.response(event);
+      return;
+    }
     this.observe(event);
     switch (event.type) {
       case "response": this.response(event); break;
-      case "agent_start": this.streaming = true; this.sessionSettled = false; this.modelError = null; this.epoch++; break;
-      case "auto_retry_start": this.retrying = true; this.sessionSettled = false; this.epoch++; break;
+      case "agent_start": this.clearLiveReply(); this.streaming = true; this.sessionSettled = false; this.modelError = null; this.epoch++; break;
       case "auto_retry_end": this.retryEnd(event); break;
       case "compaction_start": case "summarization_retry_scheduled": this.sessionSettled = false; this.epoch++; break;
-      case "message_end": this.messageEnd(event.message); break;
+      case "message_start": if (object(event.message).role === "assistant") this.clearLiveReply(); break;
+      case "message_update": this.updateLiveReply(event); break;
+      case "auto_retry_start": this.clearLiveReply(); this.retrying = true; this.sessionSettled = false; this.epoch++; break;
+      case "message_end": if (object(event.message).role === "assistant") this.clearLiveReply(); this.messageEnd(event.message); break;
       case "agent_end": this.agentEnd(event); break;
       case "agent_settled": this.agentSettled(event); break;
     }
@@ -433,7 +494,7 @@ export function createPiProvider(options: PiProviderOptions): ProviderAdapter {
   const config = piLaunchConfig(options);
   return {
     name: "pi",
-    transcript: piTranscript,
+    transcript: readPiTranscript,
     supportsRunModel: true,
     async health() {
       const error = await inspectPiLaunch(config, true);
@@ -443,7 +504,7 @@ export function createPiProvider(options: PiProviderOptions): ProviderAdapter {
     start(input) {
       const run = new PiRun(piRunInput(input, options), options.idleTimeoutMs, options.nativeTimeoutMs);
       run.start(config);
-      return { native: request => run.native(request), done: run.done, inject: (message, images) => run.inject(message, images), abort: () => run.abort() };
+      return { contextUsage: () => run.contextUsage(), native: request => run.native(request), done: run.done, inject: (message, images) => run.inject(message, images), abort: () => run.abort() };
     },
   };
 }

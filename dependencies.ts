@@ -247,7 +247,7 @@ export async function assembleModuleDependencies(moduleDir: string, sourceRoot =
 export async function stageModuleMaterial(moduleDir: string, input: { artifacts: string[]; build: ModuleMaterial["build"] }): Promise<ModuleMaterial> {
   if (input.artifacts.some(path => path === MODULE_MATERIAL_FILE || !isModuleMaterialPath(path))) throw new Error("Unsafe generated module artifact path");
   const files: { path: string; bytes: Buffer; executable: boolean }[] = [];
-  const ignored = new Set([".git", "node_modules", ".venv", ".chrona"]);
+  const ignored = new Set([".git", ".serena", "node_modules", ".venv", ".chrona"]);
   async function walk(prefix: string) {
     for (const entry of await readdir(join(moduleDir, prefix), { withFileTypes: true })) {
       if (!prefix && (ignored.has(entry.name) || entry.name === MODULE_MATERIAL_FILE)) continue;

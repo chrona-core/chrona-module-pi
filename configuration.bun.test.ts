@@ -43,9 +43,10 @@ test("normal current-user default remains implicit so Pi may create it on first 
 });
 test("local model options expose only validated IDs; unsafe paths and files are rejected", async () => {
   const f = await setup();
+  const discovery = createConfiguration(f.data, { ...f.options, command: undefined });
   await writeFile(join(f.profile, "models.json"), JSON.stringify({ providers: { custom: { apiKey: "private-models-value", baseUrl: "https://private.invalid", models: [{ id: "second", name: "private-label" }, { id: "https://credential.invalid" }, { id: "second" }] } } }));
   await writeFile(join(f.profile, "auth.json"), "not-readable-by-discovery");
-  const models = await f.configuration.models();
+  const models = await discovery.models();
   expect(models.items.map(item => item.id)).toEqual(["custom/second", "local/first"]);
   expect(JSON.stringify(models)).not.toContain("private-");
   const link = join(f.root, "profile-link"); await symlink(f.profile, link);
@@ -53,10 +54,10 @@ test("local model options expose only validated IDs; unsafe paths and files are 
   await expect(f.configuration.configure({ config: { profile: "relative" } })).rejects.toMatchObject({ code: "invalid" });
   await expect(f.configuration.configure({ config: { model: "https://secret.invalid/key" } })).rejects.toMatchObject({ code: "invalid" });
   await rm(join(f.profile, "models.json")); await symlink(join(f.profile, "auth.json"), join(f.profile, "models.json"));
-  const unsafe = await f.configuration.models(); expect(unsafe.items.map(item => item.id)).toEqual(["local/first"]); expect(unsafe.warnings).toHaveLength(1);
+  const unsafe = await discovery.models(); expect(unsafe.items.map(item => item.id)).toEqual(["local/first"]); expect(unsafe.warnings).toHaveLength(1);
   expect(JSON.stringify(unsafe)).not.toContain("not-readable-by-discovery");
   await rm(join(f.profile, "models.json")); await writeFile(join(f.profile, "models.json"), "x".repeat(1024 * 1024 + 1));
-  expect((await f.configuration.models()).warnings).toHaveLength(1);
+  expect((await discovery.models()).warnings).toHaveLength(1);
 });
 test("persisted corruption is explicit and does not silently restore defaults", async () => {
   const f = await setup(); await f.configuration.configure({ config: { model: "owner/model" } });

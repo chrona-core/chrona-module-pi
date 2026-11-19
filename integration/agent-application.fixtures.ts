@@ -60,7 +60,7 @@ export async function agentFixture() {
   let cleanup = () => rm(root, { recursive: true, force: true });
   try {
   await mkdir(dataDir); await mkdir(resources);
-  await cp(resolve(import.meta.dir, ".."), join(resources, "pi"), { recursive: true, filter: path => ![".git", "node_modules"].includes(path.split("/").at(-1)!) });
+  await cp(resolve(import.meta.dir, ".."), join(resources, "pi"), { recursive: true, filter: path => ![".git", ".serena", "node_modules"].includes(path.split("/").at(-1)!) });
   // Build only the temporary release so the fake and gateway exercise the same current contract.
   await buildPiApplication(join(resources, "pi"));
   await linkPiFixtureDependencies(join(resources, "pi"));
@@ -71,7 +71,15 @@ export async function agentFixture() {
   await writeFile(command, `#!${process.execPath}\nimport {writeFileSync,appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 if(process.argv.includes('--version')){console.log('1.5.0');process.exit(0)}
-if(process.argv.includes('--no-session')){
+if(process.argv.includes('--no-session')&&process.argv.includes('--mode')&&process.argv[process.argv.indexOf('--mode')+1]==='rpc'){
+  const model={provider:'fixture',id:'reasoning',name:'Fixture reasoning'};
+  const replies={get_available_models:{models:[model]},get_state:{model,thinkingLevel:'low'},set_model:model,get_available_thinking_levels:{levels:['low','high']}};
+  const {createInterface}=await import('node:readline');
+  for await(const line of createInterface({input:process.stdin})){
+    const {id,type}=JSON.parse(line);
+    console.log(JSON.stringify({type:'response',id,command:type,success:true,data:replies[type]}));
+  }
+}else if(process.argv.includes('--no-session')){
   for await (const chunk of process.stdin) {};
   appendFileSync(new URL('./completions.jsonl',import.meta.url),JSON.stringify({pid:process.pid})+'\\n');
   const args=process.argv.slice(2), hooks=new Map();
@@ -95,7 +103,7 @@ if (process.env.CHRONA_TOOL_CHANNEL) {
 }
 let streaming=false,buffer='';
 const emit=x=>console.log(JSON.stringify(x));
-process.stdin.setEncoding('utf8');process.stdin.on('data',chunk=>{buffer+=chunk;let n;while((n=buffer.indexOf('\\n'))>=0){const c=JSON.parse(buffer.slice(0,n));buffer=buffer.slice(n+1);appendFileSync('commands.jsonl',JSON.stringify(c)+'\\n');const data=c.type==='get_state'?{sessionId:'fixture-session',isStreaming:streaming,isCompacting:false,pendingMessageCount:0}:c.type==='get_commands'?{commands:[]}:c.type==='future_backend_feature'?{value:c.value,nested:c.nested}:{};emit({type:'response',id:c.id,command:c.type,success:true,data,...(c.type==='future_backend_feature'?{backendField:{retained:true}}:{})});if(c.type==='future_backend_feature')emit({type:'future_notice',nested:c.nested});if(c.type==='prompt'){streaming=true;writeFileSync('started','yes');writeFileSync('pi.pid',String(process.pid));emit({type:'agent_start'});emit({type:'tool_execution_start',toolCallId:'fixture',toolName:'read'});if(c.message?.includes('acceptance-question'))emit({type:'extension_ui_request',id:'backend-question',method:'confirm',title:'Continue?',message:'Offline question',timeout:30000});}if(c.type==='abort'){streaming=false;emit({type:'agent_end'});emit({type:'agent_settled'});process.exit(0);}}});
+process.stdin.setEncoding('utf8');process.stdin.on('data',chunk=>{buffer+=chunk;let n;while((n=buffer.indexOf('\\n'))>=0){const c=JSON.parse(buffer.slice(0,n));buffer=buffer.slice(n+1);appendFileSync('commands.jsonl',JSON.stringify(c)+'\\n');const data=c.type==='get_state'?{sessionId:'fixture-session',isStreaming:streaming,isCompacting:false,pendingMessageCount:0}:c.type==='get_commands'?{commands:[]}:c.type==='get_session_stats'?{contextUsage:{contextWindow:100000,tokens:101}}:c.type==='future_backend_feature'?{value:c.value,nested:c.nested}:{};emit({type:'response',id:c.id,command:c.type,success:true,data,...(c.type==='future_backend_feature'?{backendField:{retained:true}}:{})});if(c.type==='future_backend_feature')emit({type:'future_notice',nested:c.nested});if(c.type==='prompt'){streaming=true;writeFileSync('started','yes');writeFileSync('pi.pid',String(process.pid));emit({type:'agent_start'});if(c.message?.includes('stream-fixture'))emit({type:'message_update',assistantMessageEvent:{type:'text_delta',delta:'Visible partial reply'}});emit({type:'tool_execution_start',toolCallId:'fixture',toolName:'read'});if(c.message?.includes('acceptance-question'))emit({type:'extension_ui_request',id:'backend-question',method:'confirm',title:'Continue?',message:'Offline question',timeout:30000});}if(c.type==='abort'){streaming=false;emit({type:'agent_end'});emit({type:'agent_settled'});process.exit(0);}}});
 process.stdin.on('end',()=>process.exit(0));}
 `, { mode: 0o755 });
   const db = testDb({ injectedAgent: false }), workspace = await db.workspace.create({ data: { name: "agent-app" } });

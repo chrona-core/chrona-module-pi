@@ -161,11 +161,20 @@ export function createPiOperations(data: string, prepare: PrepareRun, settled?: 
     }
     return controlLive(name, row, args);
   }
+  async function contextUsage(operationId: string) {
+    const row = await owned(operationId);
+    if (row.outcome || row.failure || !row.handle?.contextUsage) throw new PiError("unavailable", "Pi live context is unavailable");
+    try { return await row.handle.contextUsage(); }
+    catch (error) {
+      console.error(JSON.stringify({ component: "pi", event: "context_inspection_failed", operationId, error: String(error) }));
+      throw new PiError("unavailable", "Pi live context is unavailable");
+    }
+  }
   async function stop() {
     stopping = true;
     await Promise.allSettled([...starting.values()]);
     const active = [...rows.values()].filter(row => row.handle && !row.outcome);
     await Promise.all(active.map(async row => { try { await row.handle!.abort(); } finally { await row.handle!.done; await row.receipt; } }));
   }
-  return { start, complete, control, stop };
+  return { start, complete, control, contextUsage, stop };
 }

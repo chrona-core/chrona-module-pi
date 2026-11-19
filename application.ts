@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { providerAnswerSchema, runtimeStartSchema, runtimeEventSchema, type RuntimeEvent, type ProviderRunInput, type ProviderAdapter } from "@chrona/contracts/steward";
-import { piTranscriptPage, PI_TRANSCRIPT_MAX_BYTES, piCompletionVersionError, piLaunchConfig, type PiProviderOptions } from "@chrona/pi";
+import { providerContextV1, providerInspectInput, providerAnswerSchema, runtimeStartSchema, runtimeEventSchema, type RuntimeEvent, type ProviderRunInput, type ProviderAdapter } from "@chrona/contracts/steward";
+import { piModelCatalog, readPiTranscript, piTranscriptPage, PI_TRANSCRIPT_MAX_BYTES, piCompletionVersionError, piLaunchConfig, type PiProviderOptions } from "@chrona/pi";
 import { Buffer } from "node:buffer";
 import { createConfiguration, launchConfiguration, type ConfigurationSnapshot, type ThinkingLevel } from "./configuration";
 import { createPiOperations, PiError } from "./operations";
@@ -97,11 +97,41 @@ export function createPiApplication({ data, options, createProvider, call }: App
         return { name: "pi", supportsRunModel: true, complete: false, available: false, sandboxed: false, error: "Pi configuration or host bridge is unavailable" };
       }
     }
-    const request = args as { sessionDir: string; limit: number; page?: true; cursor?: string };
+    const request = args as { sessionDir: string; limit: number; runId?: string; page?: true; cursor?: string };
     if (request.page) return piTranscriptPage(request);
-    const provider = createProvider((await configuration.snapshot()).options);
-    if (!provider.transcript) throw new PiError("unavailable", "Pi transcript unavailable");
-    return provider.transcript(request);
+    return readPiTranscript(request);
+  }
+  const catalogPages = new Map<string, ReturnType<typeof piModelCatalog>>();
+  function catalogPage(options: PiProviderOptions, revision: string, cursor: string | undefined) {
+    const key = JSON.stringify([revision, cursor]);
+    const pending = catalogPages.get(key);
+    if (pending) return pending;
+    if (catalogPages.size >= 4) throw new PiError("capacity", "Too many Pi catalog probes are running");
+    const page = piModelCatalog(options, cursor).finally(() => { catalogPages.delete(key); });
+    catalogPages.set(key, page);
+    return page;
+  }
+  async function query({ query, version, operationId, configurationRevision, args }: z.infer<typeof providerInspectInput>) {
+    if (query === "context" && version === 1 && operationId) {
+      z.strictObject({}).parse(args);
+      return { query, version, data: providerContextV1.parse(await operations.contextUsage(operationId)) };
+    }
+    if (query === "models" && version === 1 && !operationId) {
+      const { cursor } = z.strictObject({ cursor: z.string().min(1).max(600).optional() }).parse(args);
+      const snapshot = await configuration.snapshot(configurationRevision);
+      const prefix = `${snapshot.revision}:`;
+      if (cursor && !cursor.startsWith(prefix)) throw new PiError("conflict", "Pi model catalog configuration changed");
+      try {
+        const data = await catalogPage(snapshot.options, snapshot.revision, cursor?.slice(prefix.length));
+        return { query, version, data: { ...data, nextCursor: data.nextCursor ? prefix + data.nextCursor : null } };
+      }
+      catch (error) {
+        if (error instanceof PiError) throw error;
+        console.error(JSON.stringify({ component: "pi", event: "model_inspection_failed", error: String(error) }));
+        throw new PiError("unavailable", "Pi model catalog is unavailable");
+      }
+    }
+    throw new PiError("invalid", "Pi does not support this inspection query, version or scope");
   }
   async function handle(name: string, raw: unknown, caller?: { kind: string }, callId?: string) {
     if (!isTool(name)) throw new PiError("not_found", "Pi tool not found");
@@ -110,6 +140,7 @@ export function createPiApplication({ data, options, createProvider, call }: App
     let result: unknown;
     if (name === "configure") result = await registration.configure(args);
     else if (name === "models") result = await configuration.models();
+    else if (name === "inspect") result = await query(args as z.infer<typeof providerInspectInput>);
     else if (name === "start") result = await operations.start(args);
     else if (name === "complete") result = await operations.complete(args);
     else if (["status", "inject", "abort", "release", "native"].includes(name)) result = await operations.control(name, args as { operationId: string });

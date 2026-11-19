@@ -38,19 +38,19 @@ async function filesIn(sessionDir: string) {
   })).filter(name => name.endsWith(".jsonl")).sort();
 }
 
-type Block = { type?: string; text?: string; name?: string; arguments?: unknown };
-type Entry = { type?: string; timestamp?: string; message?: { role?: string; content?: (Block | null)[] | string; toolName?: string; isError?: boolean } };
+type Block = { id?: string; type?: string; text?: string; name?: string; arguments?: unknown };
+type Entry = { type?: string; timestamp?: string; message?: { role?: string; content?: (Block | null)[] | string; toolName?: string; toolCallId?: string; isError?: boolean } };
 function items(entry: Entry): ProviderTranscriptItem[] {
   const message = entry.message, at = entry.timestamp ?? "";
   if (entry.type !== "message" || !message) return [];
   const blocks = typeof message.content === "string" ? [{ type: "text", text: message.content }] : Array.isArray(message.content) ? message.content.filter((block): block is Block => block !== null && typeof block === "object") : [];
   if (message.role === "assistant") return blocks.flatMap<ProviderTranscriptItem>(block => {
     if (block.type === "text" && block.text?.trim()) return [{ at, kind: "text", text: block.text.trim() }];
-    if (block.type === "toolCall" && block.name) return [{ at, kind: "tool", tool: block.name, args: JSON.stringify(block.arguments ?? {}) }];
+    if (block.type === "toolCall" && block.name) return [{ at, kind: "tool", tool: block.name, args: JSON.stringify(block.arguments ?? {}), ...(typeof block.id === "string" && block.id ? { callId: block.id } : {}) }];
     return [];
   });
   if (message.role !== "toolResult") return [];
-  return [{ at, kind: "result", tool: message.toolName ?? "", text: blocks.filter(block => block.type === "text").map(block => block.text ?? "").join("\n"), error: message.isError === true }];
+  return [{ at, kind: "result", tool: message.toolName ?? "", text: blocks.filter(block => block.type === "text").map(block => block.text ?? "").join("\n"), error: message.isError === true, ...(typeof message.toolCallId === "string" && message.toolCallId ? { callId: message.toolCallId } : {}) }];
 }
 function parse(line: Buffer, file: string, offset: number): ProviderTranscriptItem[] | null {
   let entry: Entry | null;

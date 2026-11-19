@@ -3,8 +3,9 @@ import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { piModelCatalog } from "./pi-model-catalog";
 import { createPiProvider } from "./pi-provider";
-import { prepareContent } from "./pi-launch";
+import { listPiModels, prepareContent } from "./pi-launch";
 import type { ProviderRunInput } from "@chrona/contracts/steward";
 
 // Only fake subprocesses, never the installed model runner. Temp artifacts deliberately
@@ -15,24 +16,32 @@ async function fixture(mode = "normal") {
   await writeFile(command, `#!${process.execPath}
 import { appendFileSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+if (process.argv.includes('--list-models')) { console.log('provider model context max-out thinking images\\nfixture actual-model 128K 16K yes no'); process.exit(0); }
 if (process.argv.includes('--version')) {console.log('0.85.0');process.exit(0);}
 writeFileSync('launch.json', JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),profile:process.env.PI_CODING_AGENT_DIR,hasChronaDatabaseSecret:'CHRONA_DATABASE_SECRET' in process.env,hasRunToken:'CHRONA_AGENT_TOKEN' in process.env}));
 const mode=${JSON.stringify(mode)};
 const sessionId=process.argv[process.argv.indexOf('--session-id')+1];
 const sessionDir=process.argv[process.argv.indexOf('--session-dir')+1];
 const sessionFile=join(sessionDir,'fixture_'+sessionId+'.jsonl');
+let selected='gpt-6.1-sol';
 if(mode==='resume') writeFileSync('loaded-context.txt',existsSync(sessionFile)?readFileSync(sessionFile,'utf8'):'');
 let streaming=false, queue=0, cycle=0, retried=false;
 const emit = x => process.stdout.write(JSON.stringify(x)+'\\r\\n');
 const reply=(c,data={})=>emit({id:c.id,type:'response',command:c.type,success:true,data});
 function run() {
  streaming=true; cycle++; emit({type:'agent_start'});
+ if(mode==='stream'){
+  const delta=text=>emit({type:'message_update',assistantMessageEvent:{type:'text_delta',delta:text}});
+  delta('你好 abcd');
+  setTimeout(()=>delta('ab 世界'),140);
+ }
  setTimeout(()=>{
   if(mode==='error') emit({type:'message_end',message:{role:'assistant',stopReason:'error',errorMessage:'failed '+'private-run-token'}});
   streaming=false; writeFileSync('completed-cycles.txt',String(cycle));emit({type:'agent_end'});
   if(queue) setTimeout(()=>{queue--; run();},45);
   else emit({type:'agent_settled'});
- },100);
+  if(mode==='stream') emit({type:'message_end',message:{role:'assistant'}});
+ },mode==='stream'?400:100);
 }
 let buffer='';
 process.stdin.setEncoding('utf8');
@@ -42,6 +51,10 @@ process.stdin.on('data',chunk=>{
  while((n=buffer.indexOf('\\n'))!==-1){
   const c=JSON.parse(buffer.slice(0,n)); buffer=buffer.slice(n+1);
   appendFileSync('commands.jsonl',JSON.stringify(c)+'\\n');
+  if(c.type==='get_available_models') reply(c,{models:[{provider:'openai',id:'gpt-6.1-sol',name:'Reasoning'},{provider:'openai',id:'fast',name:'Fast'}]});
+  if(c.type==='set_model') {selected=c.modelId;reply(c);}
+  if(c.type==='get_available_thinking_levels') reply(c,{levels:selected==='fast'?['off']:['low','high']});
+  if(c.type==='get_session_stats') reply(c,{contextUsage:{contextWindow:100000,tokens:mode==='hang'?null:123},tokens:{total:999}});
   if(c.type==='get_state') {
    if(mode==='retry-state' && cycle===1 && !streaming && !retried) {
     retried=true;
@@ -52,7 +65,7 @@ process.stdin.on('data',chunk=>{
      emit({type:'agent_end'});emit({type:'agent_settled'});
     },60);
    }
-   reply(c,{sessionId:mode==='resume'?sessionId:mode==='missing-session-id'?undefined:'retained-session',model:{provider:'openai',id:mode==='wrong-model'?'other':'gpt-6.1-sol'},isStreaming:streaming,isCompacting:false,pendingMessageCount:queue});
+   reply(c,{sessionId:mode==='resume'?sessionId:mode==='missing-session-id'?undefined:'retained-session',model:{provider:'openai',id:mode==='wrong-model'?'other':selected},thinkingLevel:selected==='fast'?'off':'low',isStreaming:streaming,isCompacting:false,pendingMessageCount:queue});
   }
   if(c.type==='get_commands') reply(c,{commands:[]});
   if(c.type==='set_auto_retry'||c.type==='set_auto_compaction') reply(c);
@@ -89,6 +102,49 @@ async function until(check: () => Promise<boolean>) {
   for (let i = 0; i < 100; i++) { if (await check().catch(() => false)) return; await Bun.sleep(10); }
   throw new Error("fixture did not reach expected state");
 }
+test("model catalog reads the configured Pi executable without starting a Run", async () => {
+  const f = await fixture();
+  expect(await listPiModels(f.options)).toEqual(["fixture/actual-model"]);
+  expect(existsSync(join(f.cwd, "launch.json"))).toBe(false);
+});
+
+test("models inspection uses Pi's model-specific effort levels and selected default", async () => {
+  const f = await fixture();
+  expect(await piModelCatalog(f.options)).toEqual({ defaultModel: "openai/gpt-6.1-sol", nextCursor: null,
+    models: [{ id: "openai/fast", label: "Fast", effort: { options: ["off"], default: "off" } },
+      { id: "openai/gpt-6.1-sol", label: "Reasoning", effort: { options: ["low", "high"], default: "low" } }],
+  });
+});
+
+test("live context reports current window usage and preserves Pi's unknown estimate", async () => {
+  const f = await fixture("hang");
+  const raw: Record<string, unknown>[] = [];
+  const handle = f.provider.start({ ...f.input, events: { async raw(value) { raw.push(value); } } });
+  try {
+    await until(async () => (await f.commands()).some(command => command.type === "prompt"));
+    expect(await handle.contextUsage!()).toEqual({ windowTokens: 100000, usedTokens: null });
+    expect((await f.commands()).some(command => command.type === "get_session_stats" && command.id.startsWith("inspect:"))).toBe(true);
+  } finally { await handle.abort(); await handle.done; }
+  expect(raw.some(event => typeof event.id === "string" && event.id.startsWith("inspect:"))).toBe(false);
+});
+
+test("Pi transcript exposes growing assistant text before completion without split secrets", async () => {
+  const f = await fixture("stream");
+  const { runId, sessionDir } = f.input;
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(join(sessionDir, "previous.jsonl"), JSON.stringify({ type: "message", message: { role: "assistant", content: "previous reply" } }) + "\n");
+  const handle = f.provider.start({ ...f.input, token: "abcdab" });
+  const read = (id = runId) => f.provider.transcript!({ sessionDir, limit: 1, runId: id });
+  try {
+    await until(async () => (await read()).some(item => item.kind === "text" && item.text === "你好 "));
+    await until(async () => (await read()).some(item => item.kind === "text" && item.text === "你好 [redacted] 世界" && item.id === f.input.runId && item.partial));
+    expect(await read("previous-run")).toMatchObject([{ kind: "text", text: "previous reply" }]);
+    expect((await handle.done).outcome).toBe("finished");
+    expect(await read()).toEqual(await read("previous-run"));
+    expect(await read()).toMatchObject([{ kind: "text", text: "previous reply" }]);
+  } finally { await handle.done; }
+});
+
 describe("Pi RPC provider", () => {
   test("minimal resources and supplied instructions do not depend on an execution identity", async () => {
     const f = await fixture();
