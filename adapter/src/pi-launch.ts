@@ -13,7 +13,7 @@ export type PiProviderOptions = {
   /** User-selected profile; omitted inherits PI_CODING_AGENT_DIR, then Pi's normal HOME/.pi/agent. */
   agentDir?: string;
   expectedVersion?: string; model?: string; resourcesFile?: string; executionMode?: "trusted-local" | "required-isolation";
-  chronaExtension: string; webExtension?: string | null; agentUrl: string;
+  chronaExtension: string; webExtension?: string | null; agentUrl?: string;
   /** The browser tool (v2-12): its extension, and where runs get a browser from; without either runs have no browser tool. */
   browserExtension?: string | null; browsers?: { ensure(): string | null };
   workspaceRoot?: string;
@@ -147,7 +147,6 @@ function additionalExtensions(config: PiLaunchConfig, input: ProviderRunInput, b
 export function piArguments(config: PiLaunchConfig, input: ProviderRunInput, prompt: string, browser: string | null = null) {
   if (config.options.executionMode === "required-isolation") throw new Error(isolationError);
   const args = ["--mode", "rpc", "--session-dir", resolve(input.sessionDir), "--session-id", input.sessionId ?? randomUUID()];
-  // The bridge's token-scoped catalog owns admission and direct/deferred exposure.
   // Keep ambient tools active; a CLI --tools list would exclude user/native tools.
   for (const extension of additionalExtensions(config, input, browser)) args.push("-e", extension);
   for (const skill of config.resources.skills) args.push("--skill", skill);

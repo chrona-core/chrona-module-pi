@@ -5,7 +5,8 @@ import { PiEvents } from "./pi-events";
 import { PiRawRecords, nativeError, nativeRequest, nativeResponse, piRunInput, promptCommands } from "./pi-native";
 import { validatePiSessionResume } from "./pi-session-resume";
 import { piTranscript } from "./pi-transcript";
-import type { ProviderAdapter, ProviderRunInput } from "@chrona/contracts/steward";
+import { runtimeToolCallSchema, type ProviderAdapter, type ProviderRunInput } from "@chrona/contracts/steward";
+import { createLoopbackChannel, type LoopbackChannel } from "chrona/transport";
 import { createPiCompletion } from "./pi-completion";
 import { launchPiProcess, type PiProcess } from "./pi-process";
 import { inspectPiLaunch, piArguments, piEnvironment, piLaunchConfig, prepareContent, profileOverlaps, type PiLaunchConfig, type PiProviderOptions } from "./pi-launch";
@@ -47,6 +48,7 @@ function messageError(message: RecordValue): string | null {
 /** Owns one subprocess and its mutable RPC/completion state. */
 class PiRun {
   private child: PiProcess | undefined;
+  private toolChannel: LoopbackChannel | undefined;
   private events: PiEvents | undefined;
   private raw: PiRawRecords | undefined;
   private secrets: string[] = [];
@@ -102,6 +104,7 @@ class PiRun {
   private finalize() {
     if (this.settled) return;
     this.settled = true;
+    void this.toolChannel?.close();
     clearTimeout(this.timer); clearTimeout(this.poll); clearTimeout(this.killTimer); clearTimeout(this.idle);
     for (const request of this.pending.values()) request.reject(new Error("Pi run ended"));
     this.pending.clear();
@@ -118,6 +121,7 @@ class PiRun {
   private unconfirmedClosure(error: unknown) {
     if (this.settled) return;
     this.settled = true;
+    void this.toolChannel?.close();
     clearTimeout(this.timer); clearTimeout(this.poll); clearTimeout(this.killTimer); clearTimeout(this.idle);
     this.events?.interrupt();
     for (const request of this.pending.values()) request.reject(new Error("Pi process closure is unconfirmed"));
@@ -130,6 +134,7 @@ class PiRun {
     error = this.cancellation?.error ?? error;
     this.closing = { outcome, sessionId: this.sessionId, error: error === null ? null : this.redact(`${error}${this.stderr ? `: ${this.stderr}` : ""}`) };
     this.events?.interrupt();
+    void this.toolChannel?.close();
     clearTimeout(this.timer); clearTimeout(this.poll); clearTimeout(this.idle);
     if (!this.child) { this.finalize(); return; }
     this.child.stdin.end();
@@ -302,16 +307,43 @@ class PiRun {
       if (invalid) { this.stop("unavailable", invalid); return; }
       if (profileOverlaps(config.agentDir, resolve(this.input.cwd))) { this.stop("unavailable", "Pi profile must be separate from the working directory"); return; }
       if (this.input.resources === "configured" || this.input.content?.length) prepareContent(this.input);
+      if (this.input.tools?.length) await this.openToolChannel();
+      if (this.inactive()) return;
       this.child = this.spawn(config);
       this.listen(this.child);
       this.touch();
       void this.prompt(config);
-    } catch { if (!this.inactive()) this.stop("unavailable", "Could not start Pi"); }
+    } catch (error) {
+      if (this.inactive()) return;
+      console.error(JSON.stringify({ component: "pi", event: "run_start_failed", error: this.redact(String(error)) }));
+      this.stop("unavailable", "Could not start Pi");
+    }
+  }
+  private async openToolChannel() {
+    const { tools, callTool } = this.input;
+    if (new Set(tools?.map(tool => tool.name)).size !== tools?.length) throw new Error("Pi Run tool names collide");
+    if (!callTool) throw new Error("Pi Run tool callback is missing");
+    const channel = await createLoopbackChannel({ onMessage: raw => {
+      const { id, request } = object(raw);
+      const parsed = runtimeToolCallSchema.safeParse(request);
+      if (this.inactive() || typeof id !== "string" || !parsed.success) throw new Error("Invalid Pi tool channel request");
+      void callTool(parsed.data).then(output => {
+        if (channel.connected()) channel.send({ id, output });
+      }, error => {
+        if (channel.connected()) channel.send({ id, error: this.redact(`${object(error).code ?? "failed"}: ${error instanceof Error ? error.message : "Tool call failed"}`) });
+      }).catch(error => this.stop("failed", error instanceof Error ? error.message : "Pi tool channel failed"));
+    } });
+    if (this.inactive()) { await channel.close(); return; }
+    this.toolChannel = channel;
+    this.secrets.push(channel.token);
+    void channel.ready.then(() => channel.send({ tools: tools?.map(({ reference: _reference, ...definition }) => definition) })).catch(error => {
+      if (!this.inactive()) this.stop("failed", error instanceof Error ? error.message : "Pi tool channel closed");
+    });
   }
   private spawn(config: PiLaunchConfig) {
     const browser = config.browserExtension ? config.options.browsers?.ensure() ?? null : null;
     return (config.options.launch ?? launchPiProcess)({ file: config.command, args: piArguments(config, this.input, this.input.systemPrompt, browser), cwd: resolve(this.input.cwd), helperPath: config.options.processHelper,
-      env: { ...piEnvironment(config), CHRONA_AGENT_URL: config.options.agentUrl, CHRONA_AGENT_TOKEN: this.input.token, ...(browser ? { CHRONA_BROWSER: browser } : {}) } });
+      env: { ...piEnvironment(config), ...(this.toolChannel ? { CHRONA_TOOL_CHANNEL: this.toolChannel.endpoint, CHRONA_TOOL_CHANNEL_TOKEN: this.toolChannel.token } : {}), ...(browser ? { CHRONA_BROWSER: browser } : {}) } });
   }
   start(config: PiLaunchConfig) {
     this.secrets = [this.input.token, ...Object.entries(piEnvironment(config)).flatMap(([key, value]) => key.endsWith("API_KEY") && value ? [value] : [])];
@@ -398,7 +430,6 @@ class PiRun {
 
 /** Pi 0.85.0 and 1.x (1.3.0 or later) all expose the session-level agent_settled boundary. */
 export function createPiProvider(options: PiProviderOptions): ProviderAdapter {
-  if (!/^http:\/\/127\.0\.0\.1:\d{1,5}\/api\/steward-agent$/.test(options.agentUrl)) throw new Error("Chrona agent URL must be loopback");
   const config = piLaunchConfig(options);
   return {
     name: "pi",

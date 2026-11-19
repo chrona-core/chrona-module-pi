@@ -1,77 +1,36 @@
 import { expect, test } from "bun:test";
+import { createLoopbackChannel } from "chrona/transport";
 import bridge from "../resources/chrona-tools";
 
-type Tool = Parameters<Parameters<typeof bridge>[0]["registerTool"]>[0];
-async function withBridge(base: string, fetcher: typeof fetch, run: (tools: Tool[]) => Promise<void>) {
-  const originalFetch = globalThis.fetch, url = process.env.CHRONA_AGENT_URL, token = process.env.CHRONA_AGENT_TOKEN;
-  process.env.CHRONA_AGENT_URL = base; process.env.CHRONA_AGENT_TOKEN = "bridge-token";
-  globalThis.fetch = fetcher;
-  try {
-    const tools: Tool[] = [];
-    // No on/sendUserMessage methods: old lifecycle hooks would fail this test.
-    await bridge({ registerTool: tool => { tools.push(tool); } });
-    await run(tools);
-  } finally {
-    globalThis.fetch = originalFetch;
-    if (url === undefined) delete process.env.CHRONA_AGENT_URL; else process.env.CHRONA_AGENT_URL = url;
-    if (token === undefined) delete process.env.CHRONA_AGENT_TOKEN; else process.env.CHRONA_AGENT_TOKEN = token;
-  }
-}
-const base = "http://127.0.0.1:1234/api/steward-agent";
-test("bridge preserves direct exposure, namespace and tool schemas", async () => {
-  const catalog = ["import", "submit", "receipt"].map(name => ({ name: `m_author_${name}`, description: name,
-    exposure: "direct", namespace: { name: "module_author" }, parameters: { type: "object", properties: {} } }));
-  await withBridge(base, (async () => Response.json({ tools: catalog })) as typeof fetch, async tools => {
-    expect(tools.map(tool => tool.name)).toEqual(catalog.map(tool => tool.name));
-    for (const item of catalog) expect(tools.find(tool => tool.name === item.name)).toMatchObject(item);
-  });
-});
-test("bridge registers catalog schemas, forwards calls, never terminates or nudges", async () => {
-  const seen: { url: string; init?: RequestInit }[] = [];
+test("Pi registers the injected tools and forwards keyed requests over the Run channel", async () => {
+  const requests: unknown[] = [];
   const parameters = { type: "object", properties: { text: { type: "string" } }, required: ["text"] };
-  const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
-    seen.push({ url: String(url), init });
-    return Response.json(String(url).endsWith("/catalog") ? { tools: [{ name: "chrona_reply", description: "Reply", parameters,
-        output: {}
-    }] } : { ok: true, data: { messageId: "id" } });
-  }) as typeof fetch;
-  await withBridge(base, fetcher, async tools => {
-    // Every tool also takes timeoutSeconds (v2-13): how long the caller lets this call take.
-    expect(tools).toHaveLength(1); expect(tools[0].parameters).toMatchObject({ ...parameters, properties: { ...parameters.properties, timeoutSeconds: { type: "integer", minimum: 1, maximum: 600 } } });
-    const result = await tools[0].execute("call", { text: "hello" });
-    expect(result.content[0].text).toBe('{"messageId":"id"}');
-    expect("terminate" in result).toBe(false);
-    expect(seen.map(s => s.url)).toEqual([`${base}/catalog`, `${base}/tools/chrona_reply`]);
-    expect(seen[0].init?.method).toBe("GET"); expect(seen[1].init?.method).toBe("POST");
-    expect(seen[1].init?.body).toBe('{"text":"hello"}');
-    expect(seen[1].init?.redirect).toBe("error");
-    expect(seen[1].init?.headers).toEqual({ authorization: "Bearer bridge-token", "content-type": "application/json", "x-chrona-timeout-seconds": "60", "x-chrona-call-key": "call" });
-    // It travels as a header, not as a tool argument; out-of-range values fall back to the default or the cap.
-    await tools[0].execute("call", { text: "wait", timeoutSeconds: 300 });
-    expect(seen[2].init?.body).toBe('{"text":"wait"}');
-    expect(seen[2].init?.headers).toMatchObject({ "x-chrona-timeout-seconds": "300" });
-    await tools[0].execute("call", { text: "long", timeoutSeconds: 5000 });
-    expect(seen[3].init?.headers).toMatchObject({ "x-chrona-timeout-seconds": "600" });
-  });
-});
-test("bridge refuses non-loopback URLs without sending the capability", async () => {
-  let calls = 0;
-  const fetcher = (async () => { calls++; throw new Error("must not fetch"); }) as unknown as typeof fetch;
-  for (const url of ["https://example.org/api/steward-agent", "http://127.0.0.1:1234/api/steward-agent@evil", "http://localhost:1234/api/steward-agent"]) {
-    await withBridge(url, fetcher, async tools => { expect(tools).toHaveLength(0); });
+  const definition = { name: "m_demo_echo", description: "Echo text", parameters };
+  const channel = await createLoopbackChannel({ onMessage(raw) {
+    const { id, request } = raw as { id: string; request: { args: { text: string } } };
+    requests.push(request);
+    if (request.args.text === "fail") channel.send({ id, error: "forbidden: tool is outside the Run binding" });
+    else channel.send({ id, output: { text: request.args.text } });
+  } });
+  const env = [process.env.CHRONA_TOOL_CHANNEL, process.env.CHRONA_TOOL_CHANNEL_TOKEN];
+  process.env.CHRONA_TOOL_CHANNEL = channel.endpoint;
+  process.env.CHRONA_TOOL_CHANNEL_TOKEN = channel.token;
+  try {
+    const tools: Parameters<Parameters<typeof bridge>[0]["registerTool"]>[0][] = [];
+    await Promise.all([bridge({ registerTool: tool => tools.push(tool) }), channel.ready.then(() => channel.send({ tools: [definition] }))]);
+    expect(tools.map(tool => tool.name)).toEqual([definition.name]);
+    const [tool] = tools;
+    expect(tool.parameters).toMatchObject({ ...parameters, properties: { ...parameters.properties, timeoutSeconds: { type: "integer" } } });
+    expect(await tool.execute("same-key", { text: "hello", timeoutSeconds: 12 })).toEqual({ content: [{ type: "text", text: '{"text":"hello"}' }], details: undefined });
+    expect(requests).toEqual([{ name: definition.name, args: { text: "hello" }, key: "same-key", timeoutSeconds: 12 }]);
+    await expect(tool.execute("forbidden-key", { text: "fail" })).rejects.toThrow("outside the Run binding");
+    await expect(tool.execute("cancelled-key", { text: "hello" }, AbortSignal.abort())).rejects.toThrow();
+    expect(requests).toHaveLength(2);
+  } finally {
+    for (const [i, key] of ["CHRONA_TOOL_CHANNEL", "CHRONA_TOOL_CHANNEL_TOKEN"].entries()) {
+      if (env[i] === undefined) delete process.env[key];
+      else process.env[key] = env[i];
+    }
+    await channel.close();
   }
-  expect(calls).toBe(0);
-});
-test("bridge preserves refusal and cancellation and redacts run token", async () => {
-  const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
-    if (String(url).endsWith("/catalog")) return Response.json({ tools: [{ name: "chrona_schedule", description: "Schedule", parameters: {},
-        output: {}
-    }] });
-    init?.signal?.throwIfAborted();
-    return Response.json({ ok: false, error: { code: "forbidden", message: "bridge-token refused" } });
-  }) as typeof fetch;
-  await withBridge(base, fetcher, async tools => {
-    await expect(tools[0].execute("call", {})).rejects.toThrow("forbidden: [redacted] refused");
-    await expect(tools[0].execute("call", {}, AbortSignal.abort())).rejects.toThrow();
-  });
 });

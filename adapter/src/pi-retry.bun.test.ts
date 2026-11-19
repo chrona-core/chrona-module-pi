@@ -49,12 +49,12 @@ function run(){
  if(mode==='tool-limit'&&attempt>0){tool('effect-after-retry');return}
  if(mode.startsWith('terminal-')&&attempt>0){
   streaming=false;emit({type:'agent_end',messages:[]});retrying=false;
-  emit({type:'auto_retry_end',success:false,attempt,finalError:mode==='terminal-empty'?'':mode==='terminal-missing'?undefined:'terminal '+process.env.CHRONA_AGENT_TOKEN});
+  emit({type:'auto_retry_end',success:false,attempt,finalError:mode==='terminal-empty'?'':mode==='terminal-missing'?undefined:'terminal '+'private-retry-token'});
   timer=setTimeout(settle,100);return;
  }
  const recovered=mode==='success'||mode==='recover'&&attempt===retry.maxRetries;
  const message=recovered?{role:'assistant',stopReason:'stop',content:[{type:'text',text:'Recovered'}]}:
-  failure(mode==='permanent'?'401 unauthorized':mode==='overflow'?'context length exceeded':'upstream_stream_read_error '+process.env.CHRONA_AGENT_TOKEN);
+  failure(mode==='permanent'?'401 unauthorized':mode==='overflow'?'context length exceeded':'upstream_stream_read_error '+'private-retry-token');
  emit({type:'message_end',message});streaming=false;
  const willRetry=!recovered&&!['permanent','overflow'].includes(mode)&&retry.enabled&&attempt<retry.maxRetries;
  emit({type:'agent_end',messages:[message],willRetry});

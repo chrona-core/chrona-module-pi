@@ -23,7 +23,7 @@ export function outputShape(raw: unknown): unknown {
 }
 export function manifest() {
   return { name: "pi", description: "Pi 执行提供方：管理进程、会话、原生协议和当前用户的配置资源。可选预装应用。", entry: "index.ts", keepAlive: true, activated: true,
-    uses: ["agent.register", "runtime-callback.event", "web.page-set"], effects: ["network"], data: { schema: 1 }, tests: ["test-entry.ts"],
+    uses: ["agent.register", "runtime-callback.event", "tool-delegation.invoke", "web.page-set"], effects: ["network"], data: { schema: 1 }, tests: ["test-entry.ts"],
     tools: Object.entries(toolSchemas).map(([name, [input, output]]) => {
       const shape = parameters(z.toJSONSchema(input, { io: "input" }));
       // The manifest root is closed by the module tool contract itself.
@@ -39,6 +39,11 @@ export async function buildPiApplication(outputDir = import.meta.dir, sourceDir 
   const result = await Bun.build({ entrypoints: [join(sourceDir, "runtime.ts"), join(sourceDir, "test.ts")], target: "bun", minify: true,
     external: ["chrona", "@chrona/contracts", "@chrona/contracts/*", "@chrona/logging", "@chrona/logging/*", "@chrona/pi", "zod"], outdir: outputDir, naming: "[name].js" });
   if (!result.success) throw new AggregateError(result.logs, "Pi module build failed");
+  const bridge = await Bun.build({ entrypoints: [join(sourceDir, "adapter/resources/chrona-tools.ts")],
+    target: "node", outdir: join(outputDir, "adapter/resources"), naming: "chrona-tools.mjs", plugins: [{ name: "chrona-sdk-transport", setup(builder) {
+      builder.onResolve({ filter: /^chrona\/transport$/ }, args => ({ path: Bun.resolveSync(args.path, import.meta.dir) }));
+    } }] });
+  if (!bridge.success) throw new AggregateError(bridge.logs, "Pi tool extension build failed");
   for (const name of ["runtime.js", "test.js"]) {
     const path = join(outputDir, name); await writeFile(path, (await readFile(path, "utf8")).replace(/[\t ]+$/gm, ""));
   }
@@ -49,6 +54,6 @@ export async function packagePiApplication(directory = import.meta.dir) {
   const { assembleModuleDependencies, stageModuleMaterial } = await import("./dependencies");
   await buildPiApplication(directory);
   await assembleModuleDependencies(directory);
-  return stageModuleMaterial(directory, { artifacts: ["runtime.js", "test.js", "vendor"], build: { commands: ["bun build.ts"], toolchain: `Bun ${Bun.version}`, target: "bun" } });
+  return stageModuleMaterial(directory, { artifacts: ["runtime.js", "test.js", "adapter/resources/chrona-tools.mjs", "vendor"], build: { commands: ["bun build.ts"], toolchain: `Bun ${Bun.version}`, target: "bun" } });
 }
 if (import.meta.main) await packagePiApplication(process.argv[2] ?? import.meta.dir);

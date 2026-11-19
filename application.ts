@@ -41,7 +41,12 @@ export function createPiApplication({ data, options, createProvider, call }: App
   function runInput(raw: unknown): ProviderRunInput {
     const { operationId: _id, configurationRevision: _revision, callbacks, deadline, ...request } = runtimeStartSchema.parse(raw);
     if (!callbacks) throw new PiError("forbidden", "Pi start requires kernel-bound callbacks");
-    return { ...request, deadline: deadline === null ? null : new Date(deadline),
+    return { ...request, token: request.token ?? "", deadline: deadline === null ? null : new Date(deadline),
+      async callTool({ name, ...args }) {
+        const tool = request.tools?.find(tool => tool.name === name);
+        if (!tool) throw new PiError("forbidden", "Tool is outside the Provider Run binding");
+        return call("tool-delegation.invoke", { reference: tool.reference, ...args });
+      },
       events: {
         async raw(value) { await event(callbacks, { kind: "raw", value: value as Extract<RuntimeEvent, { kind: "raw" }>["value"] }); },
         async progress(value) { await event(callbacks, { kind: "progress", value }); },

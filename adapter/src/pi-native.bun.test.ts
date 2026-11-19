@@ -36,10 +36,10 @@ process.stdin.on('data',chunk=>{buffer+=chunk;let n;while((n=buffer.indexOf('\\n
  if(c.type==='never_replies')continue;
  if(c.type==='change_session'){session='foreign-session';reply(c);continue}
  if(c.type==='bad_correlation'){emit({id:c.id,type:'response',command:'wrong-command',success:true});continue}
- if(c.type==='backend_failure'){emit({id:c.id,type:'response',command:c.type,success:false,error:'refused '+process.env.CHRONA_AGENT_TOKEN,details:{code:'fake_error'}});continue}
+ if(c.type==='backend_failure'){emit({id:c.id,type:'response',command:c.type,success:false,error:'refused '+'native-private-run-token',details:{code:'fake_error'}});continue}
  if(c.type==='large_response'){reply(c,{text:'z'.repeat(280000)});continue}
  if(c.type==='raw_burst'){for(let i=0;i<600;i++)emit({type:'message_update',index:i,assistantMessageEvent:{type:'text_delta',delta:'x'.repeat(2000)}});reply(c);continue}
- const data={echo:c.value,pid:process.pid,token:process.env.CHRONA_AGENT_TOKEN,nested:{authorization:'Bearer fake-secret',password:'arbitrary-password',text:'safe '+process.env.CHRONA_AGENT_TOKEN},items:Array.from({length:200},(_,i)=>i),text:'x'.repeat(20000)};
+ const data={echo:c.value,pid:process.pid,token:'native-private-run-token',nested:{authorization:'Bearer fake-secret',password:'arbitrary-password',text:'safe '+'native-private-run-token'},items:Array.from({length:200},(_,i)=>i),text:'x'.repeat(20000)};
  emit({type:'native_notice',requestId:c.id,value:c.value,nested:data.nested});
  setTimeout(()=>reply(c,data),c.value==='first'?80:5);
 }});

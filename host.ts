@@ -25,19 +25,17 @@ export async function readPiHostConfiguration(dataDir: string): Promise<PiProvid
     raw = {};
   }
   const { environment, ...options } = hostConfigurationSchema.parse(raw);
-  const agentUrl = options.agentUrl ?? (process.env.CHRONA_KERNEL_URL ? new URL("/api/steward-agent", process.env.CHRONA_KERNEL_URL).href : "");
   for (const key of PI_MODEL_ENVIRONMENT_KEYS) {
     const value = environment?.[key];
     if (value !== undefined) process.env[key] = value;
   }
   return {
-    chronaExtension: fileURLToPath(new URL("./adapter/resources/chrona-tools.ts", import.meta.url)),
+    chronaExtension: fileURLToPath(new URL("./adapter/resources/chrona-tools.mjs", import.meta.url)),
     browserExtension: fileURLToPath(new URL("./adapter/resources/browser-tools.ts", import.meta.url)),
     workspaceRoot: resolve(dataDir, "workspaces"),
     processHelper: process.env.CHRONA_PROCESS_HELPER,
     executionMode: "trusted-local",
     command: "",
     ...options,
-    agentUrl,
   };
 }

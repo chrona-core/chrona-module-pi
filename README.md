@@ -32,7 +32,7 @@ bun test.ts
 
 ## 当前用户的 Pi 配置
 
-应用从自身私有 dataDir 的 `pi-host.json` 读取可执行程序、资源和模型环境。Agent 桥接地址默认取通用宿主的无凭据 `CHRONA_KERNEL_URL` origin 加 `/api/steward-agent`，扩展路径来自本仓 `adapter/resources/`；不读取主仓 Pi 专属环境传输对象。详情见 [开发与启动配置](DEVELOPMENT.md)。未配置可执行程序时仍可登记和展示设置；执行可用性由健康检查报告。
+应用从自身私有 dataDir 的 `pi-host.json` 读取可执行程序、资源和模型环境。Run 启动时接收工具定义和委托引用。Pi 子进程通过本地通道请求应用调用工具，应用再通过 SDK 使用该委托。默认工具扩展由 `bun build.ts` 生成到 `adapter/resources/chrona-tools.mjs`。详情见 [开发与启动配置](DEVELOPMENT.md)。未配置可执行程序时仍可登记和展示设置；执行可用性由健康检查报告。
 
 所有者通过 `configure` 选择 `profile`、`model`、`thinking`，或通过 `clear:true` 恢复继承。`config` 和页面 `form` 都替换整组覆盖值；表单空值表示继承。思考强度使用 Pi 的 `off/minimal/low/medium/high/xhigh/max`。保存不调用模型，也不修改 Pi 配置目录里的资源。
 

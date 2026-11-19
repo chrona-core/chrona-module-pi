@@ -16,7 +16,7 @@ async function fixture(mode = "normal") {
 import { appendFileSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 if (process.argv.includes('--version')) {console.log('0.85.0');process.exit(0);}
-writeFileSync('launch.json', JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),profile:process.env.PI_CODING_AGENT_DIR,hasChronaDatabaseSecret:'CHRONA_DATABASE_SECRET' in process.env,tokenMatches:process.env.CHRONA_AGENT_TOKEN==='private-run-token'}));
+writeFileSync('launch.json', JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),profile:process.env.PI_CODING_AGENT_DIR,hasChronaDatabaseSecret:'CHRONA_DATABASE_SECRET' in process.env,hasRunToken:'CHRONA_AGENT_TOKEN' in process.env}));
 const mode=${JSON.stringify(mode)};
 const sessionId=process.argv[process.argv.indexOf('--session-id')+1];
 const sessionDir=process.argv[process.argv.indexOf('--session-dir')+1];
@@ -28,7 +28,7 @@ const reply=(c,data={})=>emit({id:c.id,type:'response',command:c.type,success:tr
 function run() {
  streaming=true; cycle++; emit({type:'agent_start'});
  setTimeout(()=>{
-  if(mode==='error') emit({type:'message_end',message:{role:'assistant',stopReason:'error',errorMessage:'failed '+process.env.CHRONA_AGENT_TOKEN}});
+  if(mode==='error') emit({type:'message_end',message:{role:'assistant',stopReason:'error',errorMessage:'failed '+'private-run-token'}});
   streaming=false; writeFileSync('completed-cycles.txt',String(cycle));emit({type:'agent_end'});
   if(queue) setTimeout(()=>{queue--; run();},45);
   else emit({type:'agent_settled'});
@@ -65,7 +65,7 @@ process.stdin.on('data',chunk=>{
    }
    reply(c);
    if(streaming&&c.streamingBehavior){queue++;continue;}
-   if(mode==='crash'){process.stderr.write('crash '+process.env.CHRONA_AGENT_TOKEN);process.exit(7);}
+   if(mode==='crash'){process.stderr.write('crash '+'private-run-token');process.exit(7);}
    else if(mode==='malformed') process.stdout.write('not-json\\n');
    else if(mode==='partial') { const data=Buffer.from(JSON.stringify({type:'message_update',text:'你好\\u2028世界'})+'\\n'); process.stdout.write(data.subarray(0,43)); setTimeout(()=>{process.stdout.write(data.subarray(43));run();},10); }
    else if(mode!=='hang') run();
@@ -147,7 +147,7 @@ describe("Pi RPC provider", () => {
       const launch = JSON.parse(await readFile(join(f.cwd, "launch.json"), "utf8"));
       expect(launch.cwd).toBe(f.cwd);
       expect(launch.hasChronaDatabaseSecret).toBe(false);
-      expect(launch.tokenMatches).toBe(true);
+      expect(launch.hasRunToken).toBe(false);
       expect(launch.args[launch.args.indexOf("--session-id") + 1]).toBeString();
       expect(launch.args).not.toContain("--tools");
       expect(launch.args).not.toContain("builtin:tool-search");

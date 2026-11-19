@@ -6,7 +6,7 @@ import { readPiHostConfiguration } from "./host";
 
 const options = await readPiHostConfiguration(chrona.paths.data);
 function target(value: string): CallTarget {
-  if (/^(agent|runtime-callback)\./.test(value)) return value as CallTarget;
+  if (/^(agent|runtime-callback|tool-delegation)\./.test(value)) return value as CallTarget;
   const boundary = value.indexOf("."), moduleId = chrona.dependencies[value.slice(0, boundary)];
   if (!moduleId) throw new Error("Pi application dependency unavailable");
   return { moduleId, tool: value.slice(boundary + 1) };

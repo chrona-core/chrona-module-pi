@@ -6,7 +6,6 @@ import { join } from "node:path";
 import { moduleManifestSchema } from "@chrona/contracts/steward";
 import { agentFixture } from "./agent-application.fixtures";
 import { startLocalProvider } from "../../Chrona/packages/kernel/src/execution/local-runtime";
-import { createServerApp } from "../../Chrona/apps/server/src/app";
 import { createStewardRuntime } from "../../Chrona/apps/server/src/steward-runtime";
 
 // Generic server/Agent acceptance uses the real SDK host and a local fake Pi process.
@@ -25,11 +24,7 @@ async function fixture() {
   await db.run.update({ where: { id: f.input.runId }, data: { sessionId: context.id } });
   const selected = await selectContextTools(runtime.ports, { workspaceId: f.workspaceId, ownerId: "owner", caller: { kind: "module", moduleId: entry.id, hash: "v1" } }, ["modules.list"]);
   await db.agentRunAdmission.create({ data: { runId: f.input.runId, moduleId: entry.id, hash: context.hash, targets: selected.entries.map(entry => ({ target: `${entry.module.name}.${entry.tool.name}`, moduleId: entry.module.id, contractHash: moduleCallbackContractHash(entry.tool) })), content: [] } });
-  const app = await createServerApp({ steward: runtime });
-  const headers = { authorization: `Bearer ${f.input.token}`, "content-type": "application/json" };
-  const peer = { server: { requestIP: () => ({ address: "127.0.0.1" }) } };
-  const request = (path: string, init?: RequestInit) => app.request(`/api/steward-agent${path}`, init, peer);
-  return { ...f, runtime, db, headers, request, async close() { await runtime.stop(); await f.close(); } };
+  return { ...f, runtime, db, entry, async close() { await runtime.stop(); await f.close(); } };
 }
 async function waitForPid(cwd: string) {
   for (let i = 0; i < 100; i++) {
@@ -39,25 +34,19 @@ async function waitForPid(cwd: string) {
   throw new Error("Fake Pi did not start");
 }
 
-test("generic server authenticates the real Pi capability while actual SDK/fake Pi callbacks and abort stay private", async () => {
+test("a fake Pi subprocess executes its injected tool through the real SDK with the Run caller’s identity", async () => {
   const f = await fixture();
   let handle: Awaited<ReturnType<typeof startLocalProvider>> | undefined;
   try {
-    expect((await f.request("/catalog")).status).toBe(401);
-    expect((await f.request("/catalog", { headers: { authorization: "Bearer wrong-token" } })).status).toBe(401);
-    expect((await f.request("/catalog", { headers: { ...f.headers, "x-forwarded-for": "127.0.0.1" } })).status).toBe(403);
-    const catalog = await f.request("/catalog", { headers: f.headers });
-    expect(catalog.status).toBe(200);
-    expect((await catalog.json()).tools.map((tool: { name: string }) => tool.name)).toEqual(["m_modules_list"]);
-    const list = await f.request("/tools/m_modules_list", { method: "POST", headers: f.headers, body: "{}" });
-    expect(list.status).toBe(200); expect(await list.json()).toMatchObject({ ok: true });
-    const privateTool = await f.request("/tools/m_pi_start", { method: "POST", headers: f.headers, body: "{}" });
-    expect(privateTool.status).toBe(409); expect(await privateTool.json()).toMatchObject({ error: { code: "forbidden" } });
     const progress: unknown[] = [];
     handle = await startLocalProvider(f.runtime.ports, f.workspaceId, { ...f.input,
       events: { async progress(value) { progress.push(value); }, async usage() {}, async resources() {}, async question() { return { decision: "cancel" }; } },
     });
     expect(await waitForPid(f.input.cwd)).toBeGreaterThan(0);
+    const definitions = JSON.parse(await readFile(join(f.input.cwd, "tool-definitions.json"), "utf8")) as { name: string }[];
+    expect(definitions.map(tool => tool.name)).toEqual(["m_modules_list"]);
+    expect(JSON.parse(await readFile(join(f.input.cwd, "tool-result.json"), "utf8"))).toMatchObject({ items: expect.any(Array) });
+    expect(await f.db.moduleInvocation.findFirst({ where: { target: "modules", tool: "list" } })).toMatchObject({ callerModuleId: f.entry.id, status: "succeeded" });
     for (let i = 0; i < 100; i++) {
       if (progress.some(value => {
         const update = value as { phase: string; tool: string | null };
@@ -72,8 +61,6 @@ test("generic server authenticates the real Pi capability while actual SDK/fake 
     const callbacks = await f.db.moduleInvocation.findMany({ where: { target: "runtime-callback", tool: "event" } });
     expect(callbacks).toEqual([]);
     expect(JSON.stringify(await f.db.moduleInvocation.findMany())).not.toContain("private-agent");
-    await f.db.run.update({ where: { id: f.input.runId }, data: { status: "finished" } });
-    expect((await f.request("/catalog", { headers: f.headers })).status).toBe(401);
   } finally { if (handle) { await handle.abort().catch(() => {}); await handle.done.catch(() => {}); } await f.close(); }
 }, 20_000);
 
@@ -99,7 +86,5 @@ test.skipIf(process.platform !== "linux")("losing the actual Pi SDK host stops f
     try { alive = !(await readFile(`/proc/${pid}/stat`, "utf8")).split(") ")[1]?.startsWith("Z"); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
     expect(alive).toBe(false);
-    await f.db.run.update({ where: { id: f.input.runId }, data: { status: "finished" } });
-    expect((await f.request("/catalog", { headers: f.headers })).status).toBe(401);
   } finally { await f.close(); }
 }, 20_000);

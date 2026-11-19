@@ -36,7 +36,7 @@ const kernel = { kind: "kernel" }, owner = { kind: "owner" };
 test("manifest is an ordinary pi app with structural kernel tools and owner settings", async () => {
   const parsed = moduleManifestSchema.parse(manifest());
   expect(parsed.name).toBe("pi"); expect(parsed.activated).toBe(true);
-  expect(parsed.uses).toEqual(["agent.register", "runtime-callback.event", "web.page-set"]);
+  expect(parsed.uses).toEqual(["agent.register", "runtime-callback.event", "tool-delegation.invoke", "web.page-set"]);
   for (const tool of parsed.tools) {
     expect(tool.visibility).toEqual([tool.name === "configure" || tool.name === "models" ? "owner" : "kernel"]);
     expect(tool.parameters.properties).not.toHaveProperty("input");

@@ -7,6 +7,7 @@
   "uses": [
     "agent.register",
     "runtime-callback.event",
+    "tool-delegation.invoke",
     "web.page-set"
   ],
   "effects": [
@@ -165,6 +166,36 @@
           "searchTools": {
             "type": "boolean"
           },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "parameters": {
+                  "type": "object",
+                  "properties": {},
+                  "required": [],
+                  "additionalProperties": true
+                },
+                "reference": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "description",
+                "parameters",
+                "reference"
+              ],
+              "additionalProperties": false
+            }
+          },
           "hostPaths": {
             "type": "array",
             "items": {
@@ -210,7 +241,6 @@
         "required": [
           "operationId",
           "runId",
-          "token",
           "lane",
           "cwd",
           "sessionDir",

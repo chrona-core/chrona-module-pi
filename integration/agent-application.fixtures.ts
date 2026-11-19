@@ -67,8 +67,7 @@ export async function agentFixture() {
   await seedTestModuleRelease(resources, "pi");
   await storeVersionMaterial(join(dataDir, "platform"), await snapshotModuleMaterial(resources, "pi", { verifyTree: true }));
   const cwd = join(root, "work"), profile = join(root, "profile"); await mkdir(cwd); await mkdir(profile, { mode: 0o700 });
-  const command = join(root, "pi"), extension = join(root, "extension.ts");
-  await writeFile(extension, "");
+  const command = join(root, "pi");
   await writeFile(command, `#!${process.execPath}\nimport {writeFileSync,appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 if(process.argv.includes('--version')){console.log('1.5.0');process.exit(0)}
@@ -84,6 +83,16 @@ if(process.argv.includes('--no-session')){
   hooks.get('before_provider_request')({payload:{max_completion_tokens:65536}},{model:{provider,id,api:'openai-completions'}});
   console.log(JSON.stringify({type:'message_end',message:{role:'assistant',provider,model:id,stopReason:'stop',content:[{type:'text',text:'fixture completion'}],usage:{input:3,output:4}}}));
 }else{
+if (process.env.CHRONA_TOOL_CHANNEL) {
+  const args = process.argv.slice(2), tools = [];
+  const bridge = await import(pathToFileURL(args[args.indexOf('-e')+1]).href);
+  await bridge.default({ registerTool: tool => tools.push(tool) });
+  writeFileSync('tool-definitions.json', JSON.stringify(tools));
+  if (tools.length === 1 && tools[0].name === 'm_modules_list') {
+    const result = await tools[0].execute('fake-pi-list', {});
+    writeFileSync('tool-result.json', result.content[0].text);
+  }
+}
 let streaming=false,buffer='';
 const emit=x=>console.log(JSON.stringify(x));
 process.stdin.setEncoding('utf8');process.stdin.on('data',chunk=>{buffer+=chunk;let n;while((n=buffer.indexOf('\\n'))>=0){const c=JSON.parse(buffer.slice(0,n));buffer=buffer.slice(n+1);appendFileSync('commands.jsonl',JSON.stringify(c)+'\\n');const data=c.type==='get_state'?{sessionId:'fixture-session',isStreaming:streaming,isCompacting:false,pendingMessageCount:0}:c.type==='get_commands'?{commands:[]}:c.type==='future_backend_feature'?{value:c.value,nested:c.nested}:{};emit({type:'response',id:c.id,command:c.type,success:true,data,...(c.type==='future_backend_feature'?{backendField:{retained:true}}:{})});if(c.type==='future_backend_feature')emit({type:'future_notice',nested:c.nested});if(c.type==='prompt'){streaming=true;writeFileSync('started','yes');writeFileSync('pi.pid',String(process.pid));emit({type:'agent_start'});emit({type:'tool_execution_start',toolCallId:'fixture',toolName:'read'});if(c.message?.includes('acceptance-question'))emit({type:'extension_ui_request',id:'backend-question',method:'confirm',title:'Continue?',message:'Offline question',timeout:30000});}if(c.type==='abort'){streaming=false;emit({type:'agent_end'});emit({type:'agent_settled'});process.exit(0);}}});
@@ -108,7 +117,7 @@ process.stdin.on('end',()=>process.exit(0));}
   await db.moduleVersion.create({ data: { moduleId: module.id, hash: release.hash, source: "external", manifest: release.manifest, status: "approved", intent: {}, report: {} } });
   const applicationData = join(dataDir, "platform/data", module.id);
   await mkdir(applicationData, { recursive: true });
-  await writeFile(join(applicationData, "pi-host.json"), JSON.stringify({ command, agentDir: profile, expectedVersion: "1.5.0", chronaExtension: extension, agentUrl: "http://127.0.0.1:1/api/steward-agent", workspaceRoot: join(dataDir, "sessions") }), { mode: 0o600 });
+  await writeFile(join(applicationData, "pi-host.json"), JSON.stringify({ command, agentDir: profile, expectedVersion: "1.5.0", workspaceRoot: join(dataDir, "sessions") }), { mode: 0o600 });
   await moduleSupervisor(ports).start();
   // Registration is delivered by the application's real activated handler, never seeded here.
   const registration = await activatedPiRegistration(ports, workspace.id, module.id, release.hash);
